@@ -17,7 +17,8 @@ jobs:
           mkdir ipas
           scripts/ios_source.sh download ipas/source.ipa
           for re in '^build-ios-youthibz-' '^build-ios-(?!youthibz-)'; do
-            tag=$(gh release list --limit 50 --json tagName,isDraft --jq "[.[] | select((.isDraft|not) and (.tagName|test(\"$re\")))] | first | .tagName")
+            # jq système (oniguruma) : gère (?!…), contrairement à --jq de gh
+            tag=$(gh release list --limit 50 --json tagName,isDraft | jq -r --arg re "$re" '[.[] | select((.isDraft|not) and (.tagName|test($re)))] | first | .tagName // empty')
             [ -n "$tag" ] && gh release download "$tag" -p '*.ipa' -D ipas
           done
           ls -l ipas
