@@ -127,7 +127,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download -R "$GMSCORE_REPO" -p '*.apk' -D builder/build \
+          # Une seule variante : l'APK standard (avec icône) pour arm64.
+          gh release download -R "$GMSCORE_REPO" -p 'microg-*-arm64-v8a.apk' -D "$RUNNER_TEMP/microg" \
+            && find "$RUNNER_TEMP/microg" -name '*.apk' ! -name '*noicon*' -exec cp {} builder/build/ \; \
             || echo "::warning::MicroG-RE non téléchargé, à installer depuis https://github.com/$GMSCORE_REPO/releases"
           ls -lh builder/build/
 
