@@ -86,3 +86,7 @@ Dossier `tweak-ios/`, workflow **YouThibz** (compilé sous Linux, bien moins che
 - `Sources/` : notre code (masquer les Shorts, qualité par défaut Wi-Fi 1080p / mobile 720p).
 - L'app s'appelle **« YouThibz »** avec un bundle ID distinct : elle s'installe **à côté** de l'app uYouEnhanced pour comparer.
 - Chaque modification de `tweak-ios/` relance automatiquement un build.
+
+### Suivre les mises à jour de YouTube
+À chaque build, `scripts/check_hooks.py` compare ce que modifient les tweaks (classes et méthodes « hookées ») avec le contenu réel de l'IPA (extrait avec [ipsw](https://github.com/blacktop/ipsw)).
+Le rapport **« Compatibilité des hooks »** apparaît dans les notes de chaque release YouThibz et dans le résumé du workflow : c'est la liste de ce qu'il faut adapter quand une nouvelle version de YouTube casse quelque chose.

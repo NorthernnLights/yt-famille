@@ -126,6 +126,36 @@ jobs:
           scripts/ios_source.sh download "$RUNNER_TEMP/YouTube.ipa"
           python3 scripts/verify_ipa.py "$RUNNER_TEMP/YouTube.ipa"
 
+      # Rapport : chaque classe / méthode modifiée par les tweaks existe-t-elle encore dans cette version de YouTube ?
+      - name: Vérifier la compatibilité des hooks
+        if: steps.check.outputs.should_build == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download -R blacktop/ipsw -p 'ipsw_*_linux_x86_64.tar.gz' -D "$RUNNER_TEMP/ipsw"
+          tar -xzf "$RUNNER_TEMP"/ipsw/*.tar.gz -C "$RUNNER_TEMP/ipsw"
+          IPSW=$(find "$RUNNER_TEMP/ipsw" -type f -name ipsw | head -1)
+          rm -rf "$RUNNER_TEMP/yt" && mkdir -p "$RUNNER_TEMP/yt" "$RUNNER_TEMP/dumps"
+          unzip -q "$RUNNER_TEMP/YouTube.ipa" -d "$RUNNER_TEMP/yt"
+          APP=$(ls -d "$RUNNER_TEMP"/yt/Payload/*.app)
+          EXE=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "$APP/Info.plist")
+          VERSION=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleShortVersionString"])' "$APP/Info.plist")
+          { echo "$APP/$EXE"; for fw in "$APP"/Frameworks/*.framework; do n=$(basename "$fw" .framework); [ -f "$fw/$n" ] && echo "$fw/$n" || true; done; } \
+            | while read -r bin; do
+                "$IPSW" class-dump "$bin" > "$RUNNER_TEMP/dumps/$(basename "$bin").txt" 2>/dev/null || echo "(ignoré : $(basename "$bin"))"
+              done
+          args=()
+          for d in "$RUNNER_TEMP"/dumps/*.txt; do args+=(--dump "$d"); done
+          args+=(--source "YouThibz (code maison)=repo/tweak-ios/Sources")
+          while read -r name repo sha; do
+            [[ -z "$name" || "$name" == \#* || "$name" == YouTubeHeader || "$name" == PSHeader ]] && continue
+            args+=(--source "$name=repo/tweak-ios/build/vendor/$name")
+          done < repo/tweak-ios/vendor.lock
+          python3 repo/scripts/check_hooks.py "${args[@]}" --version "$VERSION" --report "$RUNNER_TEMP/hooks.md"
+          cat "$RUNNER_TEMP/hooks.md" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Injecter dans l'IPA
         if: steps.check.outputs.should_build == 'true'
         run: |
@@ -161,6 +191,14 @@ jobs:
             echo "- YouThibz (code maison) — masquer les Shorts, qualité par défaut (Wi-Fi 1080p / mobile 720p)"
             echo
             echo "IPA **non signée** : à installer avec Sideloadly et votre compte développeur Apple."
+            if [ -f "$RUNNER_TEMP/hooks.md" ]; then
+              echo
+              echo "<details><summary>Compatibilité des hooks</summary>"
+              echo
+              cat "$RUNNER_TEMP/hooks.md"
+              echo
+              echo "</details>"
+            fi
           } > notes.md
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" "../$OUT" --title "YouThibz ${TWEAK} — YouTube ${YT_VERSION}" \
