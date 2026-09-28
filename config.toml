@@ -1,0 +1,25 @@
+# Configuration du build Android.
+# Format : https://github.com/j-hc/revanced-magisk-module/blob/main/CONFIG.md
+# Toute modification de ce fichier déclenche un nouveau build au prochain passage.
+
+parallel-jobs = 1
+enable-module-update = false
+
+# Patchs Morphe (successeur actif de ReVanced).
+patches-source = "MorpheApp/morphe-patches"
+cli-source = "MorpheApp/morphe-cli"
+rv-brand = "Morphe"
+# "latest" = dernière version stable des patchs ; "dev" = pré-versions (YouTube plus récent, moins testé).
+patches-version = "latest"
+
+[YouTube]
+app-name = "YouTube"
+build-mode = "apk"
+# "auto" = la version de YouTube la plus récente supportée par tous les patchs.
+version = "auto"
+# Tous les téléphones Android 16 sont en arm64.
+arch = "arm64-v8a"
+apkmirror-dlurl = "https://www.apkmirror.com/apk/google-inc/youtube"
+archive-dlurl = "https://archive.org/download/jhc-apks/apks/com.google.android.youtube"
+# Patchs à exclure, ex. : excluded-patches = "'Nom du patch' 'Autre patch'"
+excluded-patches = ""

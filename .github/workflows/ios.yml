@@ -1,0 +1,303 @@
+# Adapté du workflow de uYouEnhanced (arichornlover), lui-même inspiré de YTCubePlus (@ISnackable).
+name: iOS
+
+on:
+  schedule:
+    - cron: "23 6 * * 1" # chaque lundi ; ne reconstruit que si l'IPA ou uYouEnhanced a changé
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "(Optionnel) URL directe d'une IPA déchiffrée. Vide = IPA de la release « ios-source »"
+        type: string
+        default: ""
+      app_name:
+        description: "Nom de l'app sur l'écran d'accueil"
+        type: string
+        default: "YouTube"
+      bundle_id:
+        description: "Bundle ID"
+        type: string
+        default: "com.google.ios.youtube"
+      sponsorblock:
+        description: "Inclure iSponsorBlock"
+        type: boolean
+        default: true
+      ytuhd:
+        description: "Inclure YTUHD (VP9 / 4K)"
+        type: boolean
+        default: false
+      force:
+        description: "Reconstruire même si rien n'a changé"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios
+  cancel-in-progress: false
+
+env:
+  UYOU_REPO: arichornlover/uYouEnhanced
+  UYOU_REF: main
+  APP_NAME: ${{ inputs.app_name || 'YouTube' }}
+  BUNDLE_ID: ${{ inputs.bundle_id || 'com.google.ios.youtube' }}
+  SPONSORBLOCK: ${{ (github.event_name == 'schedule' || inputs.sponsorblock) && '1' || '0' }}
+  YTUHD: ${{ inputs.ytuhd && '1' || '0' }}
+  KEEP_RELEASES: 3
+
+jobs:
+  # Vérification bon marché sur Linux : les minutes macOS comptent 10x sur un dépôt privé.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      tag: ${{ steps.check.outputs.tag }}
+      uyou_sha: ${{ steps.check.outputs.uyou_sha }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Quelque chose a changé ?
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IPA_URL: ${{ inputs.ipa_url }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          if [ -n "${IPA_URL:-}" ]; then
+            echo "::add-mask::$IPA_URL"
+            src_id=$(printf '%s' "$IPA_URL" | sha256sum | cut -c1-8)
+          else
+            assets=$(gh release view ios-source --json assets \
+              -q '[.assets[] | select(.name | endswith(".ipa"))] | sort_by(.updatedAt) | last | "\(.name)|\(.size)|\(.updatedAt)"' 2>/dev/null || true)
+            if [ -z "$assets" ] || [ "$assets" = "null" ]; then
+              echo "::error::Aucune IPA trouvée. Créez une release (brouillon accepté) avec le tag « ios-source » et joignez-y l'IPA déchiffrée de YouTube, ou passez une URL dans « ipa_url »."
+              exit 1
+            fi
+            echo "IPA source : $assets"
+            src_id=$(printf '%s' "$assets" | sha256sum | cut -c1-8)
+          fi
+          uyou_sha=$(git ls-remote "https://github.com/$UYOU_REPO" "refs/heads/$UYOU_REF" | cut -c1-40)
+          opts=$(printf '%s' "$APP_NAME|$BUNDLE_ID|$SPONSORBLOCK|$YTUHD" | sha256sum | cut -c1-4)
+          tag="build-ios-${src_id}-${uyou_sha:0:7}-${opts}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "uyou_sha=$uyou_sha" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" = "true" ] || ! gh release view "$tag" >/dev/null 2>&1; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Déjà construit ($tag), rien à faire."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Récupérer uYouEnhanced
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.UYOU_REPO }}
+          ref: ${{ needs.check.outputs.uyou_sha }}
+          path: main
+          submodules: recursive
+
+      - name: Versions attendues par uYouEnhanced
+        working-directory: main
+        run: |
+          echo "SDK_VERSION=$(sed -n 's/^SDK_VERSION *= *//p' Makefile | head -1)" >> "$GITHUB_ENV"
+          echo "UYOU_VERSION=$(sed -n 's/^UYOU_VERSION *= *//p' Makefile | head -1)" >> "$GITHUB_ENV"
+          echo "TESTED_YT=$(sed -n 's/^YOUTUBE_VERSION *= *//p' Makefile | head -1)" >> "$GITHUB_ENV"
+          grep -q '^SDK_VERSION *= *[0-9]' Makefile && grep -q '^UYOU_VERSION *= *[0-9]' Makefile \
+            || { echo "::error::Format du Makefile de uYouEnhanced inattendu (SDK_VERSION / UYOU_VERSION)."; exit 1; }
+
+      - name: Dépendances
+        run: |
+          brew install ldid dpkg make wget unzip jq pipx
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Theos
+        uses: actions/checkout@v6
+        with:
+          repository: theos/theos
+          ref: master
+          path: theos
+          submodules: recursive
+
+      - name: Cache du SDK iOS
+        id: sdk
+        uses: actions/cache@v6
+        with:
+          path: theos/sdks/
+          key: iOS-${{ env.SDK_VERSION }}-SDK
+
+      - name: Télécharger le SDK iOS
+        if: steps.sdk.outputs.cache-hit != 'true'
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/aricloverALT/sdks/ sdks
+          cd sdks
+          git sparse-checkout set --no-cone "iPhoneOS${SDK_VERSION}.sdk"
+          git checkout --quiet
+          mv *.sdk "$THEOS/sdks"
+
+      - name: Theos Jailed
+        uses: actions/checkout@v6
+        with:
+          repository: qnblackcat/theos-jailed
+          ref: master
+          path: theos-jailed
+
+      - name: Installer Theos Jailed
+        run: ./theos-jailed/install
+        env:
+          THEOS: ${{ github.workspace }}/theos
+
+      - name: Corriger les « broken pipe » de Theos
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          find "$THEOS" -type f \( -name "*.sh" -o -name "*.mk" \) -print0 \
+            | xargs -0 grep -l '| head' 2>/dev/null \
+            | while read -r f; do sed -i '' 's/| head/2>\/dev\/null | head/g' "$f"; done || true
+
+      - name: Installer cyan et tbd
+        run: |
+          pipx install https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+          wget --quiet "https://github.com/inoahdev/tbd/releases/download/2.2/tbd-mac" -O /usr/local/bin/tbd
+          chmod +x /usr/local/bin/tbd
+
+      - name: Récupérer l'IPA YouTube
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IPA_URL: ${{ inputs.ipa_url }}
+        run: |
+          set -euo pipefail
+          if [ -n "${IPA_URL:-}" ]; then
+            echo "::add-mask::$IPA_URL"
+            curl -fsSL "$IPA_URL" -o main/YouTube.ipa
+          else
+            ipa=$(gh release view ios-source -R "$GITHUB_REPOSITORY" --json assets \
+              -q '[.assets[] | select(.name | endswith(".ipa"))] | sort_by(.updatedAt) | last | .name')
+            gh release download ios-source -R "$GITHUB_REPOSITORY" -p "$ipa" -O main/YouTube.ipa
+          fi
+          cd main
+          unzip -q YouTube.ipa
+          rm YouTube.ipa
+          YT_VERSION=$(defaults read "$(pwd)/Payload/YouTube.app/Info" CFBundleVersion)
+          echo "YT_VERSION=$YT_VERSION" >> "$GITHUB_ENV"
+          echo "YouTube $YT_VERSION (version testée par uYouEnhanced : $TESTED_YT)"
+
+      - name: Compiler les tweaks
+        id: build_package
+        working-directory: main
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          make package THEOS_PACKAGE_SCHEME=rootless IPA=Payload/YouTube.app FINALPACKAGE=1 \
+            SDK_VERSION="$SDK_VERSION" UYOU_VERSION="$UYOU_VERSION" \
+            BUNDLE_ID="$BUNDLE_ID" DISPLAY_NAME="$APP_NAME" \
+            YTUHD_ENABLED="$YTUHD" SPONSORBLOCK_ENABLED="$SPONSORBLOCK"
+          echo "package=$(ls -t packages | head -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: Extension Safari « Ouvrir dans YouTube »
+        run: |
+          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/BillyCurtis/OpenYouTubeSafariExtension.git OpenYouTubeSafariExtension
+          cd OpenYouTubeSafariExtension
+          git sparse-checkout set --no-cone OpenYouTubeSafariExtension.appex
+          git checkout --quiet
+          mv *.appex ..
+
+      - name: Adapter les extensions au Bundle ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIG_PREFIX="com.google.ios.youtube"
+          fix_ids() {
+            find "$1" -type f \( -name "*.plist" -o -name "*.entitlements" \) | while read -r f; do
+              /usr/bin/plutil -convert xml1 "$f" >/dev/null 2>&1 || true
+              if grep -q "$ORIG_PREFIX" "$f" 2>/dev/null; then
+                perl -0777 -pe "s/\Q${ORIG_PREFIX}\E/${BUNDLE_ID}/g" -i "$f" || true
+              fi
+            done
+          }
+          APP="main/Payload/YouTube.app"
+          # Extensions « ExtensionKit » impossibles à re-signer : on les retire.
+          rm -rf "$APP/Extensions"
+          find "$APP" -depth -type d -name "*AppMigration*" -exec rm -rf {} + 2>/dev/null || true
+          if [ "$BUNDLE_ID" != "$ORIG_PREFIX" ]; then
+            for appex in *.appex; do fix_ids "$appex"; done
+            fix_ids "$APP"
+          fi
+
+      - name: Injecter les tweaks dans l'IPA
+        run: |
+          set -euo pipefail
+          OUT="YouTube_${YT_VERSION}_uYouEnhanced.ipa"
+          tweaks="OpenYouTubeSafariExtension.appex"
+          for f in main/packages/*.deb; do [ -f "$f" ] && tweaks="$tweaks $f"; done
+          cyan -i "main/packages/${{ steps.build_package.outputs.package }}" -o "$OUT" -uwef $tweaks -n "$APP_NAME" -b "$BUNDLE_ID"
+          # Retirer toute extension hors de PlugIns/ (non re-signable).
+          bad=$(unzip -Z1 "$OUT" | grep '\.appex/' | sed 's|^\(.*\.appex\)/.*|\1|' | sort -u | grep -v '/PlugIns/' || true)
+          if [ -n "$bad" ]; then
+            printf '%s\n' "$bad" | while IFS= read -r d; do zip -q -d "$OUT" "${d}/*" || true; done
+          fi
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+
+      - name: Icônes alternatives
+        run: |
+          set -euo pipefail
+          IPA="$PWD/$OUT"
+          ICON_SRC="$PWD/main/Localizations/uYouPlus.bundle/AppIcons"
+          [ -d "$ICON_SRC" ] || { echo "Pas d'icônes alternatives."; exit 0; }
+          rm -rf iconwork && mkdir iconwork && cd iconwork
+          unzip -q "$IPA" "Payload/YouTube.app/Info.plist"
+          PLIST="Payload/YouTube.app/Info.plist"
+          PB=/usr/libexec/PlistBuddy
+          for ROOT in CFBundleIcons "CFBundleIcons~ipad"; do
+            $PB -c "Add :$ROOT dict" "$PLIST" 2>/dev/null || true
+            $PB -c "Add :$ROOT:CFBundleAlternateIcons dict" "$PLIST" 2>/dev/null || true
+          done
+          for f in "$ICON_SRC"/*.png; do
+            NAME="$(basename "$f" .png)"
+            cp -f "$f" "Payload/YouTube.app/$NAME.png"
+            for ROOT in CFBundleIcons "CFBundleIcons~ipad"; do
+              $PB -c "Add :$ROOT:CFBundleAlternateIcons:$NAME dict" "$PLIST" 2>/dev/null || true
+              $PB -c "Add :$ROOT:CFBundleAlternateIcons:$NAME:CFBundleIconFiles array" "$PLIST" 2>/dev/null || true
+              $PB -c "Add :$ROOT:CFBundleAlternateIcons:$NAME:CFBundleIconFiles:0 string $NAME" "$PLIST" 2>/dev/null || true
+              $PB -c "Add :$ROOT:CFBundleAlternateIcons:$NAME:CFBundleIconName string $NAME" "$PLIST" 2>/dev/null || true
+            done
+          done
+          zip -q "$IPA" "$PLIST" Payload/YouTube.app/*.png
+
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.check.outputs.tag }}
+          UYOU_SHA: ${{ needs.check.outputs.uyou_sha }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          ## YouTube ${YT_VERSION} + uYouEnhanced
+
+          - uYouEnhanced : [\`${UYOU_SHA:0:7}\`](https://github.com/${UYOU_REPO}/commit/${UYOU_SHA}) (uYou ${UYOU_VERSION})
+          - Version de YouTube testée par uYouEnhanced : ${TESTED_YT}
+          - iSponsorBlock : ${SPONSORBLOCK} · YTUHD : ${YTUHD} · Bundle ID : \`${BUNDLE_ID}\`
+
+          IPA **non signée** : à installer avec Sideloadly / AltStore et votre compte développeur Apple (voir README).
+          EOF
+          gh release delete "$TAG" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "$OUT" -R "$GITHUB_REPOSITORY" \
+            --title "iOS — YouTube ${YT_VERSION} + uYouEnhanced ${UYOU_SHA:0:7}" \
+            --notes-file notes.md --latest=false
+
+      - name: Supprimer les anciens builds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+            -q '[.[] | select(.tagName | startswith("build-ios-"))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
+            | xargs -r -I{} gh release delete {} -R "$GITHUB_REPOSITORY" --yes --cleanup-tag

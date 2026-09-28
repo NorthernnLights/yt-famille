@@ -1,0 +1,8 @@
+# Aucun binaire YouTube ni clé de signature dans le dépôt.
+*.apk
+*.apkm
+*.ipa
+*.keystore
+*.p12
+*.jks
+builder/

@@ -1,0 +1,161 @@
+name: Android
+
+on:
+  schedule:
+    - cron: "17 5 * * *" # tous les jours ; ne reconstruit que si quelque chose a changé
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Reconstruire même si rien n'a changé"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android
+  cancel-in-progress: false
+
+env:
+  # Moteur de build (téléchargement de l'APK officiel, vérification de sa signature Google, patch).
+  BUILDER_REPO: j-hc/revanced-magisk-module
+  BUILDER_REF: main
+  GMSCORE_REPO: MorpheApp/MicroG-RE
+  KEEP_RELEASES: 5
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      tag: ${{ steps.check.outputs.tag }}
+      patches_tag: ${{ steps.check.outputs.patches_tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Nouvelle version des patchs ?
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          get() { sed -n "s/^$1 *= *\"\(.*\)\".*/\1/p" config.toml | head -1; }
+          src=$(get patches-source)
+          ver=$(get patches-version)
+          case "$ver" in
+            latest|"") patches_tag=$(gh api "repos/$src/releases/latest" -q .tag_name) ;;
+            dev)       patches_tag=$(gh api "repos/$src/releases?per_page=1" -q '.[0].tag_name') ;;
+            *)         patches_tag=$ver ;;
+          esac
+          cfg=$(sha256sum config.toml | cut -c1-6)
+          tag="build-android-${patches_tag}-${cfg}"
+          echo "Patchs : $src $patches_tag -> tag $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "patches_tag=$patches_tag" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" = "true" ] || ! gh release view "$tag" >/dev/null 2>&1; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Déjà construit, rien à faire."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: "21"
+
+      - uses: actions/checkout@v6
+        with:
+          path: repo
+
+      - name: Récupérer le moteur de build
+        run: git clone --depth 1 --branch "$BUILDER_REF" "https://github.com/$BUILDER_REPO" builder
+
+      - name: Clé de signature
+        # La même clé doit être réutilisée à chaque build, sinon Android refuse la mise à jour.
+        # Ordre : secret ANDROID_KEYSTORE_B64, sinon brouillon de release privé, sinon création.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          cd repo
+          if [ -n "${KS_B64:-}" ]; then
+            echo "Clé : secret ANDROID_KEYSTORE_B64"
+            printf '%s' "$KS_B64" | base64 -d > ../ks.p12
+          elif gh release download android-signing-key -p ks.p12 -D .. 2>/dev/null; then
+            echo "Clé : brouillon de release android-signing-key"
+          else
+            echo "Aucune clé trouvée : création d'une nouvelle clé."
+            # Le moteur attend l'alias « jhc » et le mot de passe 123456789 ; la clé reste privée.
+            keytool -genkeypair -keystore ../ks.p12 -storetype PKCS12 -alias jhc \
+              -keyalg RSA -keysize 4096 -validity 36500 \
+              -storepass 123456789 -keypass 123456789 -dname "CN=yt-famille"
+            gh release create android-signing-key ../ks.p12 --draft \
+              --title "Clé de signature Android (NE PAS SUPPRIMER)" \
+              --notes "Clé utilisée pour signer les APK. La supprimer oblige à désinstaller l'app sur chaque téléphone."
+          fi
+          cp ../ks.p12 ../builder/ks.keystore
+          cp ../ks.p12 ../builder/ks-p12.keystore
+
+      - name: Patcher YouTube
+        working-directory: builder
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_VER_CODE: ${{ github.run_number }}
+        run: |
+          cp ../repo/config.toml config.toml
+          ./build.sh config.toml
+          ls -lh build/
+          ls build/*.apk >/dev/null
+
+      - name: Ajouter MicroG-RE (connexion au compte Google)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download -R "$GMSCORE_REPO" -p '*.apk' -D builder/build \
+            || echo "::warning::MicroG-RE non téléchargé, à installer depuis https://github.com/$GMSCORE_REPO/releases"
+          ls -lh builder/build/
+
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.check.outputs.tag }}
+          PATCHES_TAG: ${{ needs.check.outputs.patches_tag }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          apk=$(ls ../builder/build/youtube-*.apk | head -1)
+          ytver=$(basename "$apk" | sed -n 's/.*-v\([0-9.]*\)-.*/\1/p')
+          {
+            echo "## YouTube ${ytver} — patchs Morphe ${PATCHES_TAG}"
+            echo
+            echo "**Installation (première fois) :** installer d'abord \`MicroG-RE\`, puis \`youtube-…apk\`."
+            echo "**Mise à jour :** installer seulement le nouvel APK YouTube par-dessus l'ancien."
+            echo
+            echo "<details><summary>Journal du build</summary>"
+            echo
+            cat ../builder/build.md
+            echo
+            echo "</details>"
+          } > notes.md
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" ../builder/build/*.apk \
+            --title "Android — YouTube ${ytver} (Morphe ${PATCHES_TAG})" \
+            --notes-file notes.md --latest
+
+      - name: Supprimer les anciens builds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: repo
+        run: |
+          gh release list --limit 100 --json tagName,createdAt \
+            -q '[.[] | select(.tagName | startswith("build-android-"))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
+            | xargs -r -I{} gh release delete {} --yes --cleanup-tag
