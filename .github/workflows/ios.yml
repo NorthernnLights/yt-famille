@@ -127,10 +127,10 @@ jobs:
       - name: Versions attendues par uYouEnhanced
         working-directory: main
         run: |
-          echo "SDK_VERSION=$(sed -n 's/^SDK_VERSION *= *//p' Makefile | head -1)" >> "$GITHUB_ENV"
-          echo "UYOU_VERSION=$(sed -n 's/^UYOU_VERSION *= *//p' Makefile | head -1)" >> "$GITHUB_ENV"
-          echo "TESTED_YT=$(sed -n 's/^YOUTUBE_VERSION *= *//p' Makefile | head -1)" >> "$GITHUB_ENV"
-          grep -q '^SDK_VERSION *= *[0-9]' Makefile && grep -q '^UYOU_VERSION *= *[0-9]' Makefile \
+          echo "SDK_VERSION=$(sed -n 's/^SDK_VERSION *= *//p' Makefile | head -1 | tr -d '\r ')" >> "$GITHUB_ENV"
+          echo "UYOU_VERSION=$(sed -n 's/^UYOU_VERSION *= *//p' Makefile | head -1 | tr -d '\r ')" >> "$GITHUB_ENV"
+          echo "TESTED_YT=$(sed -n 's/^YOUTUBE_VERSION *= *//p' Makefile | head -1 | tr -d '\r ')" >> "$GITHUB_ENV"
+          grep -q '^SDK_VERSION *= *[0-9]' Makefile && grep -q '^UYOU_VERSION *= *[0-9]' Makefile  # (le Makefile est en CRLF) \
             || { echo "::error::Format du Makefile de uYouEnhanced inattendu (SDK_VERSION / UYOU_VERSION)."; exit 1; }
 
       - name: Dépendances
