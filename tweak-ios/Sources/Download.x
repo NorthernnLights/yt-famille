@@ -301,7 +301,7 @@ static void YTBRun(YTPlayerViewController *player, BOOL audioOnly, UIView *sourc
     NSString *title = YTBSafeFileName(YTBValue(details, @"title") ?: videoId);
     NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:[@"YouThibz/" stringByAppendingString:videoId]];
     [[NSFileManager defaultManager] removeItemAtPath:dir error:nil];
-    [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
 
     YTBDownloader *downloader = [YTBDownloader new];
     UIAlertController *progress = [UIAlertController alertControllerWithTitle:@"Téléchargement" message:@"Préparation…" preferredStyle:UIAlertControllerStyleAlert];
