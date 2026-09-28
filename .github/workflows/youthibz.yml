@@ -113,6 +113,30 @@ jobs:
           # Retirer les extensions non re-signables (hors PlugIns/).
           bad=$(unzip -Z1 "$OUT" | grep '\.appex/' | sed 's|^\(.*\.appex\)/.*|\1|' | sort -u | grep -v '/PlugIns/' || true)
           [ -z "$bad" ] || printf '%s\n' "$bad" | while IFS= read -r d; do zip -q -d "$OUT" "${d}/*" || true; done
+          # Les briques ne se chargent plus d'office : YouThibz les charge selon ses réglages
+          # (Réglages > YouThibz > Brique : …), pour pouvoir isoler celle qui pose problème.
+          work="$RUNNER_TEMP/strip" && rm -rf "$work" && mkdir -p "$work"
+          (cd "$work" && unzip -q "$GITHUB_WORKSPACE/$OUT" Payload/YouTube.app/YouTube)
+          bin="$work/Payload/YouTube.app/YouTube"
+          ldid -e "$bin" > "$work/ent.plist"
+          mods=$(for d in repo/tweak-ios/build/debs/*.deb; do dpkg-deb -c "$d"; done \
+            | grep -o '[^/]*\.dylib$' | grep -vx 'YouThibz.dylib' | sort -u | sed 's|^|@rpath/|')
+          echo "Briques chargées par YouThibz :" $mods
+          python3 repo/scripts/strip_load_commands.py "$bin" $mods
+          if [ -s "$work/ent.plist" ]; then ldid -S"$work/ent.plist" -M "$bin"; else ldid -S -M "$bin"; fi
+          (cd "$work" && zip -q "$GITHUB_WORKSPACE/$OUT" Payload/YouTube.app/YouTube)
+          # Contrôle : YouThibz toujours chargé, les briques non.
+          unzip -p "$OUT" Payload/YouTube.app/YouTube > "$work/check"
+          python3 - "$work/check" $mods <<'PY'
+          import sys
+          sys.path.insert(0, "repo/scripts")
+          from verify_ipa import parse_macho
+          libs = parse_macho(open(sys.argv[1], "rb").read())[1]
+          print("Chargés au lancement (@rpath) :", [l for l in libs if l.startswith("@rpath/")])
+          assert "@rpath/YouThibz.dylib" in libs, "YouThibz n'est plus chargé !"
+          left = sorted(set(libs) & set(sys.argv[2:]))
+          assert not left, f"briques encore chargées d'office : {left}"
+          PY
           echo "YT_VERSION=$YT_VERSION" >> "$GITHUB_ENV"
           echo "OUT=$OUT" >> "$GITHUB_ENV"
           ls -lh "$OUT"
@@ -135,7 +159,7 @@ jobs:
             grep -v '^#' tweak-ios/vendor.lock | awk 'NF==3 {printf "- %s — [%s@%s](https://github.com/%s/commit/%s)\n", $1, $2, substr($3,1,7), $2, $3}'
             echo "- YouThibz (code maison) — masquer les Shorts, qualité par défaut (Wi-Fi 1080p / mobile 720p par défaut), réglages dans YouTube > Réglages > YouThibz"
             echo
-            echo "IPA **non signée** : à installer avec Sideloadly et votre compte développeur Apple."
+            echo "IPA **non signée** : à installer avec iLoader (ou Sideloadly) et votre compte Apple. Chaque brique peut être désactivée dans Réglages > YouThibz."
             if [ -f "$RUNNER_TEMP/hooks.md" ]; then
               echo
               echo "<details><summary>Compatibilité des hooks</summary>"

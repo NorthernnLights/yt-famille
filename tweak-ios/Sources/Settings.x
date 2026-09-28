@@ -1,5 +1,5 @@
 // Section « YouThibz » dans les réglages de YouTube (Réglages > YouThibz).
-#import "Prefs.h"
+#import "Modules.h"
 #import <objc/runtime.h>
 #import <YouTubeHeader/YTIIcon.h>
 #import <YouTubeHeader/YTIcon.h>
@@ -79,6 +79,20 @@ static YTSettingsSectionItem *YTBQualityItem(YTSettingsViewController *settings,
         settingItemId:0]];
     [items addObject:YTBQualityItem(settings, @"Qualité en Wi-Fi", kQualityWiFi, 1080)];
     [items addObject:YTBQualityItem(settings, @"Qualité en données mobiles", kQualityCellular, 720)];
+
+    // Briques : utile pour isoler celle qui pose problème après une mise à jour de YouTube.
+    for (NSArray <NSString *> *module in YTBModules()) {
+        NSString *key = YTBModuleKey(module[0]);
+        [items addObject:[itemClass switchItemWithTitle:[@"Brique : " stringByAppendingString:module[1]]
+            titleDescription:[module[2] stringByAppendingString:@" Effet au prochain lancement de l'app."]
+            accessibilityIdentifier:nil
+            switchOn:YTBBool(key, YES)
+            switchBlock:^BOOL (YTSettingsCell *cell, BOOL on) {
+                YTBSetValue(key, @(on));
+                return YES;
+            }
+            settingItemId:0]];
+    }
 
     if ([settings respondsToSelector:@selector(setSectionItems:forCategory:title:icon:titleDescription:headerHidden:)]) {
         YTIIcon *icon = [objc_getClass("YTIIcon") new];

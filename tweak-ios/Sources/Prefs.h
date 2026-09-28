@@ -1,5 +1,5 @@
 // Réglages de YouThibz, stockés dans NSUserDefaults avec le préfixe « YouThibz_ ».
-// Tant qu'il n'y a pas d'écran de réglages, les valeurs par défaut ci-dessous s'appliquent.
+// Modifiables dans YouTube > Réglages > YouThibz ; sinon les valeurs par défaut ci-dessous s'appliquent.
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
