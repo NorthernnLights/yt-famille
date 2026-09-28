@@ -1,0 +1,3 @@
+# Tweak YouTube Music pour iOS, figé à un commit précis (changer le commit = nouveau build).
+# Format : nom  dépôt-github  commit
+YTMusicUltimate  dayanch96/YTMusicUltimate  e5530b1a1323d6ae48dd4fe0f1f2b932d59962ba

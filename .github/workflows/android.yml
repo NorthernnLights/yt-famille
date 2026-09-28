@@ -121,7 +121,7 @@ jobs:
           cp ../repo/config.toml config.toml
           ./build.sh config.toml
           ls -lh build/
-          ls build/*.apk >/dev/null
+          ls build/youtube-*.apk build/music-*.apk >/dev/null  # les deux apps doivent être construites
 
       - name: Ajouter MicroG-RE (connexion au compte Google)
         env:
@@ -139,13 +139,19 @@ jobs:
         working-directory: repo
         run: |
           set -euo pipefail
-          apk=$(ls ../builder/build/youtube-*.apk | head -1)
-          ytver=$(basename "$apk" | sed -n 's/.*-v\([0-9.]*\)-.*/\1/p')
+          ver() { ls ../builder/build/"$1"-*.apk 2>/dev/null | head -1 | xargs -r basename | sed -n 's/.*-v\([0-9.]*\)-.*/\1/p'; }
+          ytver=$(ver youtube); musicver=$(ver music)
+          title="Android —"
+          [ -n "$ytver" ] && title="$title YouTube ${ytver}"
+          [ -n "$musicver" ] && title="$title${ytver:+ ·} Music ${musicver}"
           {
-            echo "## YouTube ${ytver} — patchs Morphe ${PATCHES_TAG}"
+            echo "## Patchs Morphe ${PATCHES_TAG}"
             echo
-            echo "**Installation (première fois) :** installer d'abord \`MicroG-RE\`, puis \`youtube-…apk\`."
-            echo "**Mise à jour :** installer seulement le nouvel APK YouTube par-dessus l'ancien."
+            [ -n "$ytver" ] && echo "- **YouTube ${ytver}** : \`youtube-…apk\`"
+            [ -n "$musicver" ] && echo "- **YouTube Music ${musicver}** : \`music-…apk\`"
+            echo
+            echo "**Installation (première fois) :** installer d'abord \`MicroG-RE\` (connexion au compte Google, commun aux deux apps), puis les APK voulus."
+            echo "**Mise à jour :** installer seulement les nouveaux APK par-dessus les anciens."
             echo
             echo "<details><summary>Journal du build</summary>"
             echo
@@ -155,7 +161,7 @@ jobs:
           } > notes.md
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" ../builder/build/*.apk \
-            --title "Android — YouTube ${ytver} (Morphe ${PATCHES_TAG})" \
+            --title "$title (Morphe ${PATCHES_TAG})" \
             --notes-file notes.md --latest
 
       - name: Supprimer les anciens builds

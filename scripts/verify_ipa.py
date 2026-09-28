@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vérifie qu'une IPA YouTube est déchiffrée et non modifiée.
 
-Usage : verify_ipa.py YouTube.ipa
+Usage : verify_ipa.py App.ipa [bundle-id-attendu]   (défaut : com.google.ios.youtube)
 Code de sortie : 0 = OK, 1 = IPA inutilisable (chiffrée ou déjà modifiée), 2 = erreur.
 """
 import plistlib
@@ -24,7 +24,7 @@ DYLIB_CMDS = {LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, LC_REEXPORT_DYLIB, LC_LAZY_LOAD
 TWEAK_MARKERS = re.compile(
     r"substrate|substitute|ellekit|libhooker|orion\.framework|liborion|uyou|ytlite|youtubeplus|ytplus|cercube|"
     r"youpip|ytuhd|isponsorblock|ytabconfig|youquality|youspeed|donteatmycontent|libflex|flexing|"
-    r"returnyoutubedislike|youtubedislikesreturn|ytkace|youmod|ytnoads|alderis|libcolorpicker",
+    r"returnyoutubedislike|youtubedislikesreturn|ytkace|youmod|ytnoads|alderis|libcolorpicker|ytmusicultimate",
     re.IGNORECASE,
 )
 
@@ -68,7 +68,7 @@ def parse_macho(data):
     return cryptids, dylibs
 
 
-def main(path):
+def main(path, expected_bundle="com.google.ios.youtube"):
     problems, warnings = [], []
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
@@ -83,7 +83,7 @@ def main(path):
         version = info.get("CFBundleShortVersionString") or info.get("CFBundleVersion", "?")
         print(f"App : {app}  |  bundle : {bundle_id}  |  version : {version}")
 
-        if bundle_id != "com.google.ios.youtube":
+        if bundle_id != expected_bundle:
             warnings.append(f"Bundle ID modifié ({bundle_id}) : l'IPA a probablement déjà été retouchée.")
         if info.get("CFBundleDisplayName", "YouTube") != "YouTube":
             warnings.append(f"Nom affiché modifié : {info.get('CFBundleDisplayName')}")
@@ -120,11 +120,11 @@ def main(path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
         print(__doc__)
         sys.exit(2)
     try:
-        sys.exit(main(sys.argv[1]))
+        sys.exit(main(*sys.argv[1:]))
     except (zipfile.BadZipFile, KeyError, ValueError, struct.error) as e:
         print(f"::error::Lecture de l'IPA impossible : {e}")
         sys.exit(2)

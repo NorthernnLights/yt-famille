@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# Trouve l'IPA source dans les releases (brouillons compris) nommées OU taguées « ios-source ».
+# Trouve l'IPA source dans les releases (brouillons compris) nommées OU taguées « $SOURCE_NAME »
+# (par défaut « ios-source » = YouTube ; « ytmusic-source » = YouTube Music).
 #   ios_source.sh info           -> "id|nom|taille|date" de l'IPA la plus récente
 #   ios_source.sh download FICH  -> télécharge cette IPA dans FICH
 # Nécessite GH_TOKEN et GITHUB_REPOSITORY.
 set -euo pipefail
+SOURCE_NAME="${SOURCE_NAME:-ios-source}"
 
-asset=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '
-  [ .[] | select((.tag_name | ascii_downcase) == "ios-source" or (.name // "" | ascii_downcase) == "ios-source")
+asset=$(SOURCE_NAME="$SOURCE_NAME" gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '
+  [ .[] | select((.tag_name | ascii_downcase) == env.SOURCE_NAME or (.name // "" | ascii_downcase) == env.SOURCE_NAME)
         | .assets[] | select(.name | ascii_downcase | endswith(".ipa")) ]
   | sort_by(.updated_at) | last
   | if . == null then "" else "\(.id)|\(.name)|\(.size)|\(.updated_at)" end')
 
 if [ -z "$asset" ]; then
-  echo "::error::Aucune IPA trouvée. Créez une release (brouillon accepté) nommée ou taguée « ios-source » et joignez-y l'IPA déchiffrée (.ipa), ou passez une URL dans « ipa_url »." >&2
+  echo "::error::Aucune IPA trouvée. Créez une release (brouillon accepté) nommée ou taguée « $SOURCE_NAME » et joignez-y l'IPA déchiffrée (.ipa), ou passez une URL dans « ipa_url »." >&2
   exit 1
 fi
 

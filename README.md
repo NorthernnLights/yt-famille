@@ -90,3 +90,16 @@ Dossier `tweak-ios/`, workflow **YouThibz** (compilé sous Linux, bien moins che
 ### Suivre les mises à jour de YouTube
 À chaque build, `scripts/check_hooks.py` compare ce que modifient les tweaks (classes et méthodes « hookées ») avec le contenu réel de l'IPA (extrait avec [ipsw](https://github.com/blacktop/ipsw)).
 Le rapport **« Compatibilité des hooks »** apparaît dans les notes de chaque release YouThibz et dans le résumé du workflow : c'est la liste de ce qu'il faut adapter quand une nouvelle version de YouTube casse quelque chose.
+
+---
+
+## YouTube Music
+
+### Android
+Construit avec YouTube dans le workflow **Android** (patchs Morphe, section `[Music]` de `config.toml`). La release contient `music-…apk` ; **MicroG-RE** sert aux deux apps.
+
+### iOS
+Workflow **YouTube Music iOS** : [YTMusicUltimate](https://github.com/dayanch96/YTMusicUltimate) (GPL-3 : pubs, arrière-plan, téléchargements, SponsorBlock…), compilé sous Linux avec le correctif de connexion pour le sideload, figé dans `ytmusic-ios/vendor.lock`.
+1. **Releases → Draft a new release**, titre **ou** tag : `ytmusic-source`, joindre l'IPA **déchiffrée** de YouTube Music, **Save draft**.
+2. **Actions → YouTube Music iOS → Run workflow** (ou attendre le lundi).
+3. Installer l'IPA produite avec Sideloadly, comme pour YouTube.

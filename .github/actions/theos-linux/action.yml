@@ -1,0 +1,64 @@
+name: Theos sous Linux
+description: >
+  Installe Theos, la toolchain iOS Linux (L1ghtmann), ldid et un SDK iOS « patché » de Theos.
+  Les SDK 17+ sont incompatibles avec cette toolchain (clang 11) ; cela n'empêche pas les tweaks de tourner sur iOS 26.
+inputs:
+  sdk-version:
+    description: Version du SDK iOS (dépôt theos/sdks)
+    default: "16.5"
+  theos-path:
+    description: Dossier d'installation de Theos (relatif à l'espace de travail)
+    default: theos
+runs:
+  using: composite
+  steps:
+    - name: Dépendances
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq build-essential fakeroot rsync perl libxml2 libncurses6 zip unzip pipx >/dev/null
+        # La toolchain iOS cherche libtinfo.so.5, absente des Ubuntu récents.
+        lib=$(ls /usr/lib/x86_64-linux-gnu/libtinfo.so.6* | head -1)
+        sudo ln -sf "$lib" /usr/lib/x86_64-linux-gnu/libtinfo.so.5
+        echo "THEOS=$GITHUB_WORKSPACE/${{ inputs.theos-path }}" >> "$GITHUB_ENV"
+
+    - name: Theos
+      uses: actions/checkout@v6
+      with:
+        repository: theos/theos
+        ref: master
+        path: ${{ inputs.theos-path }}
+        submodules: recursive
+
+    - name: Toolchain iOS et ldid
+      shell: bash
+      run: |
+        set -euxo pipefail
+        mkdir -p "$THEOS/toolchain"
+        curl -fsSL https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz \
+          | tar -xJ -C "$THEOS/toolchain"
+        "$THEOS/toolchain/linux/iphone/bin/clang" --version | head -1
+        sudo curl -fsSL https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64 -o /usr/local/bin/ldid
+        sudo chmod +x /usr/local/bin/ldid
+
+    - name: Cache du SDK iOS
+      id: sdk
+      uses: actions/cache@v6
+      with:
+        path: ${{ inputs.theos-path }}/sdks/iPhoneOS${{ inputs.sdk-version }}.sdk
+        key: linux-theos-iOS-${{ inputs.sdk-version }}-SDK
+
+    - name: Télécharger le SDK iOS
+      if: steps.sdk.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        SDK_VERSION: ${{ inputs.sdk-version }}
+      run: |
+        set -euxo pipefail
+        mkdir -p "$THEOS/sdks"
+        rm -rf "$RUNNER_TEMP/sdks-src"
+        git clone -n --depth=1 --filter=tree:0 https://github.com/theos/sdks/ "$RUNNER_TEMP/sdks-src"
+        cd "$RUNNER_TEMP/sdks-src"
+        git sparse-checkout set --no-cone "iPhoneOS${SDK_VERSION}.sdk"
+        git checkout
+        mv "iPhoneOS${SDK_VERSION}.sdk" "$THEOS/sdks/"

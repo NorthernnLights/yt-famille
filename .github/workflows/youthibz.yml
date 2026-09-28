@@ -7,6 +7,8 @@ on:
     branches: [main]
     paths:
       - "tweak-ios/**"
+      - "scripts/**"
+      - ".github/actions/theos-linux/**"
       - ".github/workflows/youthibz.yml"
   schedule:
     - cron: "41 6 * * 1" # chaque lundi ; ne reconstruit que si l'IPA ou le tweak a changé
@@ -64,54 +66,11 @@ jobs:
             echo "should_build=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Dépendances
+      - name: Theos sous Linux
         if: steps.check.outputs.should_build == 'true'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq build-essential fakeroot rsync perl libxml2 libncurses6 zip unzip pipx >/dev/null
-          # La toolchain iOS cherche libtinfo.so.5, absente des Ubuntu récents.
-          lib=$(ls /usr/lib/x86_64-linux-gnu/libtinfo.so.6* | head -1)
-          sudo ln -sf "$lib" /usr/lib/x86_64-linux-gnu/libtinfo.so.5
-
-      - name: Theos
-        if: steps.check.outputs.should_build == 'true'
-        uses: actions/checkout@v6
+        uses: ./repo/.github/actions/theos-linux
         with:
-          repository: theos/theos
-          ref: master
-          path: theos
-          submodules: recursive
-
-      - name: Toolchain iOS et ldid
-        if: steps.check.outputs.should_build == 'true'
-        run: |
-          set -euxo pipefail
-          mkdir -p "$THEOS/toolchain"
-          curl -fsSL https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz \
-            | tar -xJ -C "$THEOS/toolchain"
-          "$THEOS/toolchain/linux/iphone/bin/clang" --version | head -1
-          sudo curl -fsSL https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64 -o /usr/local/bin/ldid
-          sudo chmod +x /usr/local/bin/ldid
-          ldid 2>&1 | head -1 || true
-
-      - name: Cache du SDK iOS
-        if: steps.check.outputs.should_build == 'true'
-        id: sdk
-        uses: actions/cache@v6
-        with:
-          path: theos/sdks/iPhoneOS${{ env.SDK_VERSION }}.sdk
-          key: linux-theos-iOS-${{ env.SDK_VERSION }}-SDK
-
-      - name: Télécharger le SDK iOS
-        if: steps.check.outputs.should_build == 'true' && steps.sdk.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          mkdir -p "$THEOS/sdks"
-          git clone -n --depth=1 --filter=tree:0 https://github.com/theos/sdks/ "$RUNNER_TEMP/sdks-src"
-          cd "$RUNNER_TEMP/sdks-src"
-          git sparse-checkout set --no-cone "iPhoneOS${SDK_VERSION}.sdk"
-          git checkout
-          mv "iPhoneOS${SDK_VERSION}.sdk" "$THEOS/sdks/"
+          sdk-version: ${{ env.SDK_VERSION }}
 
       - name: Compiler YouThibz et les briques
         if: steps.check.outputs.should_build == 'true'
@@ -134,26 +93,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release download -R blacktop/ipsw -p 'ipsw_*_linux_x86_64.tar.gz' -D "$RUNNER_TEMP/ipsw"
-          tar -xzf "$RUNNER_TEMP"/ipsw/*.tar.gz -C "$RUNNER_TEMP/ipsw"
-          IPSW=$(find "$RUNNER_TEMP/ipsw" -type f -name ipsw | head -1)
-          rm -rf "$RUNNER_TEMP/yt" && mkdir -p "$RUNNER_TEMP/yt" "$RUNNER_TEMP/dumps"
-          unzip -q "$RUNNER_TEMP/YouTube.ipa" -d "$RUNNER_TEMP/yt"
-          APP=$(ls -d "$RUNNER_TEMP"/yt/Payload/*.app)
-          EXE=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleExecutable"])' "$APP/Info.plist")
-          VERSION=$(python3 -c 'import plistlib,sys; print(plistlib.load(open(sys.argv[1],"rb"))["CFBundleShortVersionString"])' "$APP/Info.plist")
-          { echo "$APP/$EXE"; for fw in "$APP"/Frameworks/*.framework; do n=$(basename "$fw" .framework); [ -f "$fw/$n" ] && echo "$fw/$n" || true; done; } \
-            | while read -r bin; do
-                "$IPSW" class-dump "$bin" > "$RUNNER_TEMP/dumps/$(basename "$bin").txt" 2>/dev/null || echo "(ignoré : $(basename "$bin"))"
-              done
-          args=()
-          for d in "$RUNNER_TEMP"/dumps/*.txt; do args+=(--dump "$d"); done
-          args+=(--source "YouThibz (code maison)=repo/tweak-ios/Sources")
+          sources=("YouThibz (code maison)=repo/tweak-ios/Sources")
           while read -r name repo sha; do
             [[ -z "$name" || "$name" == \#* || "$name" == YouTubeHeader || "$name" == PSHeader ]] && continue
-            args+=(--source "$name=repo/tweak-ios/build/vendor/$name")
+            sources+=("$name=repo/tweak-ios/build/vendor/$name")
           done < repo/tweak-ios/vendor.lock
-          python3 repo/scripts/check_hooks.py "${args[@]}" --version "$VERSION" --report "$RUNNER_TEMP/hooks.md"
+          repo/scripts/hooks_report.sh "$RUNNER_TEMP/YouTube.ipa" "$RUNNER_TEMP/hooks.md" "${sources[@]}"
           cat "$RUNNER_TEMP/hooks.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Injecter dans l'IPA
