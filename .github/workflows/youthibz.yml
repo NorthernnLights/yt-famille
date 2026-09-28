@@ -188,7 +188,7 @@ jobs:
             echo
             echo "Briques incluses :"
             grep -v '^#' tweak-ios/vendor.lock | awk 'NF==3 {printf "- %s — [%s@%s](https://github.com/%s/commit/%s)\n", $1, $2, substr($3,1,7), $2, $3}'
-            echo "- YouThibz (code maison) — masquer les Shorts, qualité par défaut (Wi-Fi 1080p / mobile 720p)"
+            echo "- YouThibz (code maison) — masquer les Shorts, qualité par défaut (Wi-Fi 1080p / mobile 720p par défaut), réglages dans YouTube > Réglages > YouThibz"
             echo
             echo "IPA **non signée** : à installer avec Sideloadly et votre compte développeur Apple."
             if [ -f "$RUNNER_TEMP/hooks.md" ]; then

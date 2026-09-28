@@ -83,7 +83,7 @@ L'IPA publiée n'est **pas signée**. Le plus simple :
 Dossier `tweak-ios/`, workflow **YouThibz** (compilé sous Linux, bien moins cher en minutes que macOS).
 
 - `vendor.lock` : briques open source figées à un commit (YouTube-X : pubs + arrière-plan, YouPiP, YouQuality, iSponsorBlock, Return-YouTube-Dislikes).
-- `Sources/` : notre code (masquer les Shorts, qualité par défaut Wi-Fi 1080p / mobile 720p).
+- `Sources/` : notre code (masquer les Shorts, qualité par défaut Wi-Fi 1080p / mobile 720p), réglable dans **YouTube > Réglages > YouThibz**.
 - L'app s'appelle **« YouThibz »** avec un bundle ID distinct : elle s'installe **à côté** de l'app uYouEnhanced pour comparer.
 - Chaque modification de `tweak-ios/` relance automatiquement un build.
 
