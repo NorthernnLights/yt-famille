@@ -1,6 +1,6 @@
 # Briques open source du tweak, figées à un commit précis.
 # Format : nom  dépôt-github  commit
-# Mettre à jour = changer le commit (ou lancer le workflow « iOS Perso » avec update_vendor).
+# Mettre à jour une brique = changer son commit ici (le build se relance tout seul).
 YouTubeHeader            PoomSmart/YouTubeHeader            1ac7b3fe84ef9fb6cbac93fb252a3a9ec985d95c
 PSHeader                 PoomSmart/PSHeader                 1bb7d9c7d1bc40a57f83e1e58aa53bcf4acdcbfa
 YTVideoOverlay           PoomSmart/YTVideoOverlay           e267dbd351fb48dd70339fd72fb9954ca44010a0

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile YTPerso et ses briques open source en paquets .deb (Linux ou macOS).
+# Compile YouThibz et ses briques open source en paquets .deb (Linux ou macOS).
 # Prérequis : $THEOS installé (toolchain + SDK iOS) et ldid dans le PATH.
 # Sortie : tweak-ios/build/debs/*.deb
 set -euo pipefail

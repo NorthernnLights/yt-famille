@@ -8,7 +8,7 @@
 @end
 
 // Identifiants des éléments « Shorts » dans les réponses du serveur.
-static BOOL YTPIsShortsElement(NSString *description) {
+static BOOL YTBIsShortsElement(NSString *description) {
     if ([description containsString:@"history*"]) return NO; // garder l'historique intact
     for (NSString *marker in @[@"shorts_shelf.eml", @"shorts_video_cell.eml", @"6Shorts"]) {
         if ([description containsString:marker]) return YES;
@@ -18,14 +18,14 @@ static BOOL YTPIsShortsElement(NSString *description) {
 
 %hook YTIElementRenderer
 - (NSData *)elementData {
-    if (YTPBool(kHideShorts, YES) && YTPIsShortsElement([self description])) return nil;
+    if (YTBBool(kHideShorts, YES) && YTBIsShortsElement([self description])) return nil;
     return %orig;
 }
 %end
 
 %hook YTPivotBarView
 - (void)setRenderer:(YTIPivotBarRenderer *)renderer {
-    if (YTPBool(kHideShorts, YES)) {
+    if (YTBBool(kHideShorts, YES)) {
         NSMutableArray <YTIPivotBarSupportedRenderers *> *items = [renderer itemsArray];
         NSIndexSet *shorts = [items indexesOfObjectsPassingTest:^BOOL(YTIPivotBarSupportedRenderers *item, NSUInteger idx, BOOL *stop) {
             return [[[item pivotBarItemRenderer] pivotIdentifier] isEqualToString:@"FEshorts"];

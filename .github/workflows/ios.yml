@@ -323,5 +323,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
-            -q '[.[] | select(.tagName | startswith("build-ios-") and (startswith("build-ios-perso-") | not))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
+            -q '[.[] | select(.tagName | startswith("build-ios-") and (startswith("build-ios-youthibz-") | not))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
             | xargs -r -I{} gh release delete {} -R "$GITHUB_REPOSITORY" --yes --cleanup-tag

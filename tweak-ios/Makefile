@@ -4,10 +4,10 @@ INSTALL_TARGET_PROCESSES = YouTube
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = YTPerso
+TWEAK_NAME = YouThibz
 
-YTPerso_FILES = $(wildcard Sources/*.x)
-YTPerso_CFLAGS = -fobjc-arc
-YTPerso_FRAMEWORKS = UIKit SystemConfiguration
+YouThibz_FILES = $(wildcard Sources/*.x)
+YouThibz_CFLAGS = -fobjc-arc
+YouThibz_FRAMEWORKS = UIKit SystemConfiguration
 
 include $(THEOS_MAKE_PATH)/tweak.mk

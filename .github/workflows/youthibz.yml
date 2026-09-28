@@ -1,13 +1,13 @@
-# Build de « YouTube Perso » : notre tweak YTPerso + briques open source, compilé sous Linux
+# Build de « YouThibz » : notre tweak YouThibz + briques open source, compilé sous Linux
 # (10x moins cher en minutes GitHub que macOS), puis injecté dans l'IPA de la release « ios-source ».
-name: iOS Perso
+name: YouThibz
 
 on:
   push:
     branches: [main]
     paths:
       - "tweak-ios/**"
-      - ".github/workflows/ios-perso.yml"
+      - ".github/workflows/youthibz.yml"
   schedule:
     - cron: "41 6 * * 1" # chaque lundi ; ne reconstruit que si l'IPA ou le tweak a changé
   workflow_dispatch:
@@ -21,13 +21,13 @@ permissions:
   contents: write
 
 concurrency:
-  group: ios-perso
+  group: youthibz
   cancel-in-progress: true
 
 env:
-  APP_NAME: "YouTube Perso"
-  # Bundle ID distinct pour installer « YouTube Perso » à côté de l'app uYouEnhanced.
-  BUNDLE_ID: com.google.ios.youtube.perso
+  APP_NAME: "YouThibz"
+  # Bundle ID distinct pour installer « YouThibz » à côté de l'app uYouEnhanced.
+  BUNDLE_ID: com.google.ios.youtube.youthibz
   # SDK « patché » de Theos : les SDK récents (17+) sont incompatibles avec la toolchain Linux (clang 11).
   # Sans effet sur la compatibilité : le tweak tourne sur iOS 26.
   SDK_VERSION: "16.5"
@@ -53,8 +53,8 @@ jobs:
         run: |
           set -euo pipefail
           src=$(scripts/ios_source.sh info)
-          tweak=$(git log -1 --format=%h -- tweak-ios .github/workflows/ios-perso.yml)
-          tag="build-ios-perso-$(printf '%s' "$src" | sha256sum | cut -c1-8)-${tweak}"
+          tweak=$(git log -1 --format=%h -- tweak-ios .github/workflows/youthibz.yml)
+          tag="build-ios-youthibz-$(printf '%s' "$src" | sha256sum | cut -c1-8)-${tweak}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "tweak=$tweak" >> "$GITHUB_OUTPUT"
           if [ "$FORCE" = "true" ] || [ "$GITHUB_EVENT_NAME" = "push" ] || ! gh release view "$tag" >/dev/null 2>&1; then
@@ -113,7 +113,7 @@ jobs:
           git checkout
           mv "iPhoneOS${SDK_VERSION}.sdk" "$THEOS/sdks/"
 
-      - name: Compiler YTPerso et les briques
+      - name: Compiler YouThibz et les briques
         if: steps.check.outputs.should_build == 'true'
         run: repo/tweak-ios/build.sh
 
@@ -133,7 +133,7 @@ jobs:
           pipx install https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
           YT_VERSION=$(unzip -p "$RUNNER_TEMP/YouTube.ipa" Payload/YouTube.app/Info.plist \
             | python3 -c 'import plistlib,sys; print(plistlib.loads(sys.stdin.buffer.read())["CFBundleShortVersionString"])')
-          OUT="YouTubePerso_${YT_VERSION}.ipa"
+          OUT="YouThibz_${YT_VERSION}.ipa"
           cyan -i "$RUNNER_TEMP/YouTube.ipa" -o "$OUT" -uwef repo/tweak-ios/build/debs/*.deb -n "$APP_NAME" -b "$BUNDLE_ID"
           # Retirer les extensions non re-signables (hors PlugIns/).
           bad=$(unzip -Z1 "$OUT" | grep '\.appex/' | sed 's|^\(.*\.appex\)/.*|\1|' | sort -u | grep -v '/PlugIns/' || true)
@@ -152,28 +152,28 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "## YouTube ${YT_VERSION} + YTPerso (\`${TWEAK}\`)"
+            echo "## YouTube ${YT_VERSION} + YouThibz (\`${TWEAK}\`)"
             echo
             echo "App **« ${APP_NAME} »** (\`${BUNDLE_ID}\`) : s'installe à côté de l'app uYouEnhanced."
             echo
             echo "Briques incluses :"
             grep -v '^#' tweak-ios/vendor.lock | awk 'NF==3 {printf "- %s — [%s@%s](https://github.com/%s/commit/%s)\n", $1, $2, substr($3,1,7), $2, $3}'
-            echo "- YTPerso — masquer les Shorts, qualité par défaut (Wi-Fi 1080p / mobile 720p)"
+            echo "- YouThibz (code maison) — masquer les Shorts, qualité par défaut (Wi-Fi 1080p / mobile 720p)"
             echo
             echo "IPA **non signée** : à installer avec Sideloadly et votre compte développeur Apple."
           } > notes.md
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" "../$OUT" --title "iOS Perso — YouTube ${YT_VERSION} + YTPerso ${TWEAK}" \
+          gh release create "$TAG" "../$OUT" --title "YouThibz ${TWEAK} — YouTube ${YT_VERSION}" \
             --notes-file notes.md --latest=false
           gh release list --limit 100 --json tagName,createdAt \
-            -q '[.[] | select(.tagName | startswith("build-ios-perso-"))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
+            -q '[.[] | select(.tagName | startswith("build-ios-youthibz-"))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
 
       - name: Paquets .deb (en cas d'échec d'injection)
         if: always() && steps.check.outputs.should_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: ytperso-debs
+          name: youthibz-debs
           path: repo/tweak-ios/build/debs/*.deb
           if-no-files-found: ignore
           retention-days: 7
