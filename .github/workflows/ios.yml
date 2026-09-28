@@ -49,7 +49,7 @@ env:
   BUNDLE_ID: ${{ inputs.bundle_id || 'com.google.ios.youtube' }}
   SPONSORBLOCK: ${{ (github.event_name == 'schedule' || inputs.sponsorblock) && '1' || '0' }}
   YTUHD: ${{ inputs.ytuhd && '1' || '0' }}
-  KEEP_RELEASES: 3
+  KEEP_RELEASES: 1
 
 jobs:
   # Vérification bon marché sur Linux : les minutes macOS comptent 10x sur un dépôt privé.

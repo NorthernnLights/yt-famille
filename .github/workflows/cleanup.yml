@@ -1,0 +1,40 @@
+# Garde uniquement la dernière release de chaque app. Les brouillons (clé de signature Android,
+# IPA sources « ios-source » / « ytmusic-source ») ne sont jamais touchés.
+name: Nettoyage des releases
+
+on:
+  schedule:
+    - cron: "11 7 * * 0" # chaque dimanche
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Supprimer les anciennes releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release list --limit 200 --json tagName,createdAt,isDraft --jq '
+            def family:
+              if   (.tagName | startswith("build-android-"))      then "android"
+              elif (.tagName | startswith("build-ios-youthibz-")) then "youthibz"
+              elif (.tagName | startswith("build-ytmusic-ios-"))  then "ytmusic"
+              elif (.tagName | startswith("build-ios-perso-"))    then "obsolete"
+              elif (.tagName | startswith("build-ios-"))          then "uyouenhanced"
+              else "autre" end;
+            [ .[] | select(.isDraft | not) | . + {family: family} | select(.family != "autre") ]
+            | group_by(.family)
+            | map(if .[0].family == "obsolete" then .[] else (sort_by(.createdAt) | reverse | .[1:][]) end)
+            | .[].tagName' > to_delete.txt
+          if [ ! -s to_delete.txt ]; then echo "Rien à supprimer."; exit 0; fi
+          echo "Releases supprimées :"
+          while read -r tag; do
+            echo "- $tag"
+            gh release delete "$tag" --yes --cleanup-tag
+          done < to_delete.txt

@@ -25,6 +25,8 @@ apkmirror-dlurl = "https://www.apkmirror.com/apk/google-inc/youtube"
 archive-dlurl = "https://archive.org/download/jhc-apks/apks/com.google.android.youtube"
 # Patchs à exclure, ex. : excluded-patches = "'Nom du patch' 'Autre patch'"
 excluded-patches = ""
+# Nom affiché « YouThibz », logo d'origine de YouTube.
+patcher-args = "-e 'Custom branding' -OcustomName=YouThibz -OappIcon=original"
 
 [Music]
 app-name = "Music"
@@ -34,3 +36,5 @@ arch = "arm64-v8a"
 apkmirror-dlurl = "https://www.apkmirror.com/apk/google-inc/youtube-music"
 archive-dlurl = "https://archive.org/download/jhc-apks/apks/com.google.android.apps.youtube.music"
 excluded-patches = ""
+# Nom affiché « YThibz Music », logo d'origine de YouTube Music.
+patcher-args = "-e 'Custom branding' -OcustomName='YThibz Music' -OappIcon=original"

@@ -22,7 +22,7 @@ env:
   BUILDER_REPO: j-hc/revanced-magisk-module
   BUILDER_REF: main
   GMSCORE_REPO: MorpheApp/MicroG-RE
-  KEEP_RELEASES: 5
+  KEEP_RELEASES: 1
 
 jobs:
   check:
@@ -147,8 +147,8 @@ jobs:
           {
             echo "## Patchs Morphe ${PATCHES_TAG}"
             echo
-            [ -n "$ytver" ] && echo "- **YouTube ${ytver}** : \`youtube-…apk\`"
-            [ -n "$musicver" ] && echo "- **YouTube Music ${musicver}** : \`music-…apk\`"
+            [ -n "$ytver" ] && echo "- **YouThibz** (YouTube ${ytver}) : \`youtube-…apk\`"
+            [ -n "$musicver" ] && echo "- **YThibz Music** (YouTube Music ${musicver}) : \`music-…apk\`"
             echo
             echo "**Installation (première fois) :** installer d'abord \`MicroG-RE\` (connexion au compte Google, commun aux deux apps), puis les APK voulus."
             echo "**Mise à jour :** installer seulement les nouveaux APK par-dessus les anciens."

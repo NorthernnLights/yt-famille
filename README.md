@@ -30,6 +30,9 @@ Pour plus de sécurité, on peut la déplacer dans un secret :
 2. `base64 -w0 ks.p12` → créer le secret `ANDROID_KEYSTORE_B64` (Settings → Secrets and variables → Actions).
 3. Supprimer la release brouillon.
 
+### Noms des apps
+Les apps s'appellent **YouThibz** (YouTube) et **YThibz Music** (YouTube Music), avec le **logo d'origine** : option `patcher-args` du patch « Custom branding » dans `config.toml`.
+
 ### Installer sur un téléphone
 1. **Première fois :** installer `MicroG-RE` (nécessaire pour se connecter au compte Google sans root), puis `youtube-morphe-…apk`.
 2. Ouvrir YouTube → se connecter → MicroG-RE gère la connexion.
@@ -67,6 +70,9 @@ L'IPA publiée n'est **pas signée**. Le plus simple :
 - `ipa_url` : utiliser une URL directe au lieu de la release `ios-source`
 
 ---
+
+## Releases
+Seule la **dernière** release de chaque app est gardée (workflows + **Nettoyage des releases** chaque dimanche, lançable à la main). Les brouillons (`android-signing-key`, `ios-source`, `ytmusic-source`) ne sont jamais supprimés.
 
 ## Coûts GitHub Actions (dépôt privé, offre gratuite : 2000 min/mois)
 - Android : ~1 min/jour de vérification + ~10 min par build.

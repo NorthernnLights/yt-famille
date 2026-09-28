@@ -29,7 +29,7 @@ concurrency:
 env:
   SOURCE_NAME: ytmusic-source
   EXPECTED_BUNDLE: com.google.ios.youtubemusic
-  KEEP_RELEASES: 3
+  KEEP_RELEASES: 1
 
 jobs:
   build:

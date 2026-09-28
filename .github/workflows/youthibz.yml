@@ -33,7 +33,7 @@ env:
   # SDK « patché » de Theos : les SDK récents (17+) sont incompatibles avec la toolchain Linux (clang 11).
   # Sans effet sur la compatibilité : le tweak tourne sur iOS 26.
   SDK_VERSION: "16.5"
-  KEEP_RELEASES: 3
+  KEEP_RELEASES: 1
 
 jobs:
   build:
