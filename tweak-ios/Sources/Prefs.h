@@ -1,6 +1,7 @@
 // Réglages de YTPerso, stockés dans NSUserDefaults avec le préfixe « YTPerso_ ».
 // Tant qu'il n'y a pas d'écran de réglages, les valeurs par défaut ci-dessous s'appliquent.
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
 #define YTP_KEY(k) [@"YTPerso_" stringByAppendingString:(k)]
 
