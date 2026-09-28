@@ -8,6 +8,6 @@ TWEAK_NAME = YouThibz
 
 YouThibz_FILES = $(wildcard Sources/*.x)
 YouThibz_CFLAGS = -fobjc-arc
-YouThibz_FRAMEWORKS = UIKit SystemConfiguration
+YouThibz_FRAMEWORKS = UIKit SystemConfiguration AVFoundation Photos
 
 include $(THEOS_MAKE_PATH)/tweak.mk

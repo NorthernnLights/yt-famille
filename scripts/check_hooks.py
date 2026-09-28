@@ -110,8 +110,9 @@ def selector_of(signature):
 
 
 def parse_hooks(folder):
-    """Renvoie [(fichier, ligne, classe, "-sel" ou None pour la classe seule)] et les références de classes."""
-    hooks, refs = [], []
+    """Renvoie [(fichier, ligne, classe, "-sel" ou None pour la classe seule)], les références de classes
+    et les méthodes ajoutées par %new ({(classe, "-sel")})."""
+    hooks, refs, news = [], [], set()
     for f in sorted(Path(folder).rglob("*")):
         if f.suffix not in (".x", ".xm", ".xi") or "/.theos/" in str(f) or "Simulator" in str(f):
             continue
@@ -137,10 +138,12 @@ def parse_hooks(folder):
                 sel = selector_of(sig)
                 if sel and not skip_next:
                     hooks.append((f, i + 1, cls, m.group(1) + sel))
+                elif sel:
+                    news.add((cls, m.group(1) + sel))
                 skip_next = False
                 i = j
             i += 1
-    return hooks, refs
+    return hooks, refs, news
 
 
 # ---------------------------------------------------------------- rapport
@@ -164,9 +167,10 @@ def main():
            "| Composant | Hooks vérifiés | OK | Absents | Non vérifiables* |", "|---|---:|---:|---:|---:|"]
     details = []
     total_missing = 0
-    for spec in args.source:
-        name, folder = spec.split("=", 1)
-        hooks, refs = parse_hooks(folder)
+    parsed = [(spec.split("=", 1)[0], parse_hooks(spec.split("=", 1)[1])) for spec in args.source]
+    # Méthodes ajoutées (%new) par une brique et modifiées par une autre (ex. -buttonImage: de YTVideoOverlay).
+    all_news = set().union(*(p[2] for _, p in parsed)) if parsed else set()
+    for name, (hooks, refs, _) in parsed:
         ok = missing = unknown = 0
         lines = []
         for f, ln, cls, sel in hooks:
@@ -180,7 +184,7 @@ def main():
                 continue
             if sel is None:
                 continue
-            found = rt.find(cls, sel)
+            found = True if (cls, sel) in all_news else rt.find(cls, sel)
             if found:
                 ok += 1
             elif found is None:

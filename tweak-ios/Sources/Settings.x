@@ -79,6 +79,15 @@ static YTSettingsSectionItem *YTBQualityItem(YTSettingsViewController *settings,
         settingItemId:0]];
     [items addObject:YTBQualityItem(settings, @"Qualité en Wi-Fi", kQualityWiFi, 1080)];
     [items addObject:YTBQualityItem(settings, @"Qualité en données mobiles", kQualityCellular, 720)];
+    [items addObject:[itemClass switchItemWithTitle:@"Bouton Télécharger"
+        titleDescription:@"Bouton ⬇︎ dans le lecteur : vidéo (qualité Wi-Fi ci-dessus, vers Photos) ou audio seul (vers Fichiers)."
+        accessibilityIdentifier:nil
+        switchOn:YTBBool(kDownloadButtonPref, YES)
+        switchBlock:^BOOL (YTSettingsCell *cell, BOOL on) {
+            YTBSetValue(kDownloadButtonPref, @(on));
+            return YES;
+        }
+        settingItemId:0]];
 
     // Briques : utile pour isoler celle qui pose problème après une mise à jour de YouTube.
     for (NSArray <NSString *> *module in YTBModules()) {

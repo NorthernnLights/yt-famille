@@ -19,3 +19,4 @@ static inline NSInteger YTBInt(NSString *key, NSInteger fallback) {
 #define kHideShorts        @"hideShorts"        // BOOL, défaut YES
 #define kQualityWiFi       @"qualityWiFi"       // hauteur max en pixels (0 = ne rien changer), défaut 1080
 #define kQualityCellular   @"qualityCellular"   // idem en données mobiles, défaut 720
+#define kDownloadButtonPref @"downloadButton"   // BOOL, défaut YES : bouton Télécharger dans le lecteur
