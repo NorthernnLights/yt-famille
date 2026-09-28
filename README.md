@@ -17,7 +17,7 @@ Tous les workflows peuvent aussi être lancés à la main : onglet **Actions** �
 
 ### Comment ça marche
 1. Le workflow lit la dernière version des patchs Morphe.
-2. Il choisit la **version de YouTube la plus récente supportée par les patchs** (`version = "auto"`).
+2. Il choisit la **version de YouTube la plus récente supportée par les patchs** (`version = "experimental"`, voir `config.toml`).
 3. Il télécharge l'APK officiel (APKMirror, sinon archive.org) et **vérifie qu'il est signé par Google**.
 4. Il applique les patchs, signe avec **notre propre clé**, et publie l'APK + MicroG-RE dans une release.
 
@@ -45,7 +45,7 @@ Modifier `config.toml` (patchs exclus, options, `patches-version = "dev"` pour d
 ## iOS
 
 ### 1. Fournir l'IPA déchiffrée (à chaque nouvelle version de YouTube)
-1. **Releases → Draft a new release**, tag : `ios-source` (créer le tag).
+1. **Releases → Draft a new release**, titre **ou** tag : `ios-source`.
 2. Joindre l'IPA déchiffrée de YouTube (fichier `.ipa`), puis **Save draft**.
 3. Pour mettre à jour YouTube plus tard : éditer ce brouillon, supprimer l'ancienne IPA, joindre la nouvelle.
 

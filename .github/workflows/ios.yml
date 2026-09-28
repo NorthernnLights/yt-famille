@@ -75,12 +75,7 @@ jobs:
             echo "::add-mask::$IPA_URL"
             src_id=$(printf '%s' "$IPA_URL" | sha256sum | cut -c1-8)
           else
-            assets=$(gh release view ios-source --json assets \
-              -q '[.assets[] | select(.name | endswith(".ipa"))] | sort_by(.updatedAt) | last | "\(.name)|\(.size)|\(.updatedAt)"' 2>/dev/null || true)
-            if [ -z "$assets" ] || [ "$assets" = "null" ]; then
-              echo "::error::Aucune IPA trouvée. Créez une release (brouillon accepté) avec le tag « ios-source » et joignez-y l'IPA déchiffrée de YouTube, ou passez une URL dans « ipa_url »."
-              exit 1
-            fi
+            assets=$(scripts/ios_source.sh info)
             echo "IPA source : $assets"
             src_id=$(printf '%s' "$assets" | sha256sum | cut -c1-8)
           fi
@@ -108,9 +103,7 @@ jobs:
             echo "::add-mask::$IPA_URL"
             curl -fsSL "$IPA_URL" -o /tmp/YouTube.ipa
           else
-            ipa=$(gh release view ios-source --json assets \
-              -q '[.assets[] | select(.name | endswith(".ipa"))] | sort_by(.updatedAt) | last | .name')
-            gh release download ios-source -p "$ipa" -O /tmp/YouTube.ipa
+            scripts/ios_source.sh download /tmp/YouTube.ipa
           fi
           python3 scripts/verify_ipa.py /tmp/YouTube.ipa
 
@@ -119,6 +112,10 @@ jobs:
     if: needs.check.outputs.should_build == 'true' && !inputs.verify_only
     runs-on: macos-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          path: yt-famille
+
       - name: Récupérer uYouEnhanced
         uses: actions/checkout@v6
         with:
@@ -203,9 +200,7 @@ jobs:
             echo "::add-mask::$IPA_URL"
             curl -fsSL "$IPA_URL" -o main/YouTube.ipa
           else
-            ipa=$(gh release view ios-source -R "$GITHUB_REPOSITORY" --json assets \
-              -q '[.assets[] | select(.name | endswith(".ipa"))] | sort_by(.updatedAt) | last | .name')
-            gh release download ios-source -R "$GITHUB_REPOSITORY" -p "$ipa" -O main/YouTube.ipa
+            yt-famille/scripts/ios_source.sh download main/YouTube.ipa
           fi
           cd main
           unzip -q YouTube.ipa

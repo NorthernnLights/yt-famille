@@ -90,8 +90,15 @@ jobs:
           if [ -n "${KS_B64:-}" ]; then
             echo "Clé : secret ANDROID_KEYSTORE_B64"
             printf '%s' "$KS_B64" | base64 -d > ../ks.p12
-          elif gh release download android-signing-key -p ks.p12 -D .. 2>/dev/null; then
+          elif id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq \
+                '[.[] | select(.tag_name == "android-signing-key") | .assets[] | select(.name == "ks.p12")] | first | .id // empty') \
+               && [ -n "$id" ]; then
             echo "Clé : brouillon de release android-signing-key"
+            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$id" -o ../ks.p12
+          elif gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' | grep -qx android-signing-key; then
+            echo "::error::La release android-signing-key existe mais ks.p12 est introuvable : arrêt pour ne pas changer de clé."
+            exit 1
           else
             echo "Aucune clé trouvée : création d'une nouvelle clé."
             # Le moteur attend l'alias « jhc » et le mot de passe 123456789 ; la clé reste privée.

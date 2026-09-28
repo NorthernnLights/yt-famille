@@ -15,8 +15,10 @@ patches-version = "latest"
 [YouTube]
 app-name = "YouTube"
 build-mode = "apk"
-# "auto" = la version de YouTube la plus récente supportée par tous les patchs.
-version = "auto"
+# "experimental" = la version de YouTube la plus récente supportée par les patchs,
+#   y compris celles que Morphe marque « expérimentales » (plus récentes, un peu moins testées).
+# "auto" = la plus récente parmi les versions « stables » des patchs (souvent plusieurs mois de retard).
+version = "experimental"
 # Tous les téléphones Android 16 sont en arm64.
 arch = "arm64-v8a"
 apkmirror-dlurl = "https://www.apkmirror.com/apk/google-inc/youtube"
