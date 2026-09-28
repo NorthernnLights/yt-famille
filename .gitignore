@@ -6,3 +6,8 @@
 *.p12
 *.jks
 builder/
+
+# Build du tweak iOS
+tweak-ios/build/
+.theos/
+packages/

@@ -1,0 +1,177 @@
+# Build de « YouTube Perso » : notre tweak YTPerso + briques open source, compilé sous Linux
+# (10x moins cher en minutes GitHub que macOS), puis injecté dans l'IPA de la release « ios-source ».
+name: iOS Perso
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tweak-ios/**"
+      - ".github/workflows/ios-perso.yml"
+  schedule:
+    - cron: "41 6 * * 1" # chaque lundi ; ne reconstruit que si l'IPA ou le tweak a changé
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Reconstruire même si rien n'a changé"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-perso
+  cancel-in-progress: true
+
+env:
+  APP_NAME: "YouTube Perso"
+  # Bundle ID distinct pour installer « YouTube Perso » à côté de l'app uYouEnhanced.
+  BUNDLE_ID: com.google.ios.youtube.perso
+  SDK_VERSION: "18.6"
+  KEEP_RELEASES: 3
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - name: Quelque chose a changé ?
+        id: check
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          src=$(scripts/ios_source.sh info)
+          tweak=$(git log -1 --format=%h -- tweak-ios .github/workflows/ios-perso.yml)
+          tag="build-ios-perso-$(printf '%s' "$src" | sha256sum | cut -c1-8)-${tweak}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "tweak=$tweak" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" = "true" ] || [ "$GITHUB_EVENT_NAME" = "push" ] || ! gh release view "$tag" >/dev/null 2>&1; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Déjà construit ($tag)."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dépendances
+        if: steps.check.outputs.should_build == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential fakeroot rsync perl libxml2 libncurses6 zip unzip pipx >/dev/null
+          # La toolchain iOS cherche libtinfo.so.5, absente des Ubuntu récents.
+          lib=$(ls /usr/lib/x86_64-linux-gnu/libtinfo.so.6* | head -1)
+          sudo ln -sf "$lib" /usr/lib/x86_64-linux-gnu/libtinfo.so.5
+
+      - name: Theos
+        if: steps.check.outputs.should_build == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: theos/theos
+          ref: master
+          path: theos
+          submodules: recursive
+
+      - name: Toolchain iOS et ldid
+        if: steps.check.outputs.should_build == 'true'
+        run: |
+          set -euxo pipefail
+          mkdir -p "$THEOS/toolchain"
+          curl -fsSL https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz \
+            | tar -xJ -C "$THEOS/toolchain"
+          "$THEOS/toolchain/linux/iphone/bin/clang" --version | head -1
+          sudo curl -fsSL https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64 -o /usr/local/bin/ldid
+          sudo chmod +x /usr/local/bin/ldid
+          ldid 2>&1 | head -1 || true
+
+      - name: Cache du SDK iOS
+        if: steps.check.outputs.should_build == 'true'
+        id: sdk
+        uses: actions/cache@v6
+        with:
+          path: theos/sdks/iPhoneOS${{ env.SDK_VERSION }}.sdk
+          key: linux-iOS-${{ env.SDK_VERSION }}-SDK
+
+      - name: Télécharger le SDK iOS
+        if: steps.check.outputs.should_build == 'true' && steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          mkdir -p "$THEOS/sdks"
+          git clone -n --depth=1 --filter=tree:0 https://github.com/aricloverALT/sdks/ "$RUNNER_TEMP/sdks-src"
+          cd "$RUNNER_TEMP/sdks-src"
+          git sparse-checkout set --no-cone "iPhoneOS${SDK_VERSION}.sdk"
+          git checkout
+          mv "iPhoneOS${SDK_VERSION}.sdk" "$THEOS/sdks/"
+
+      - name: Compiler YTPerso et les briques
+        if: steps.check.outputs.should_build == 'true'
+        run: repo/tweak-ios/build.sh
+
+      - name: Récupérer et vérifier l'IPA
+        if: steps.check.outputs.should_build == 'true'
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/ios_source.sh download "$RUNNER_TEMP/YouTube.ipa"
+          python3 scripts/verify_ipa.py "$RUNNER_TEMP/YouTube.ipa"
+
+      - name: Injecter dans l'IPA
+        if: steps.check.outputs.should_build == 'true'
+        run: |
+          set -euo pipefail
+          pipx install https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+          YT_VERSION=$(unzip -p "$RUNNER_TEMP/YouTube.ipa" Payload/YouTube.app/Info.plist \
+            | python3 -c 'import plistlib,sys; print(plistlib.loads(sys.stdin.buffer.read())["CFBundleShortVersionString"])')
+          OUT="YouTubePerso_${YT_VERSION}.ipa"
+          cyan -i "$RUNNER_TEMP/YouTube.ipa" -o "$OUT" -uwef repo/tweak-ios/build/debs/*.deb -n "$APP_NAME" -b "$BUNDLE_ID"
+          # Retirer les extensions non re-signables (hors PlugIns/).
+          bad=$(unzip -Z1 "$OUT" | grep '\.appex/' | sed 's|^\(.*\.appex\)/.*|\1|' | sort -u | grep -v '/PlugIns/' || true)
+          [ -z "$bad" ] || printf '%s\n' "$bad" | while IFS= read -r d; do zip -q -d "$OUT" "${d}/*" || true; done
+          echo "YT_VERSION=$YT_VERSION" >> "$GITHUB_ENV"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+          ls -lh "$OUT"
+
+      - name: Publier
+        if: steps.check.outputs.should_build == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.check.outputs.tag }}
+          TWEAK: ${{ steps.check.outputs.tweak }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          {
+            echo "## YouTube ${YT_VERSION} + YTPerso (\`${TWEAK}\`)"
+            echo
+            echo "App **« ${APP_NAME} »** (\`${BUNDLE_ID}\`) : s'installe à côté de l'app uYouEnhanced."
+            echo
+            echo "Briques incluses :"
+            grep -v '^#' tweak-ios/vendor.lock | awk 'NF==3 {printf "- %s — [%s@%s](https://github.com/%s/commit/%s)\n", $1, $2, substr($3,1,7), $2, $3}'
+            echo "- YTPerso — masquer les Shorts, qualité par défaut (Wi-Fi 1080p / mobile 720p)"
+            echo
+            echo "IPA **non signée** : à installer avec Sideloadly et votre compte développeur Apple."
+          } > notes.md
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "../$OUT" --title "iOS Perso — YouTube ${YT_VERSION} + YTPerso ${TWEAK}" \
+            --notes-file notes.md --latest=false
+          gh release list --limit 100 --json tagName,createdAt \
+            -q '[.[] | select(.tagName | startswith("build-ios-perso-"))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
+            | xargs -r -I{} gh release delete {} --yes --cleanup-tag
+
+      - name: Paquets .deb (en cas d'échec d'injection)
+        if: always() && steps.check.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ytperso-debs
+          path: repo/tweak-ios/build/debs/*.deb
+          if-no-files-found: ignore
+          retention-days: 7

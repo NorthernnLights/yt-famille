@@ -75,3 +75,14 @@ L'IPA publiée n'est **pas signée**. Le plus simple :
 ## Règles
 - Garder ce dépôt **privé**. Ne jamais partager publiquement les APK/IPA produits.
 - Modifier YouTube est contraire à ses conditions d'utilisation : risque faible mais non nul pour les comptes.
+
+---
+
+## iOS — « YouTube Perso » (notre propre tweak, en construction)
+
+Dossier `tweak-ios/`, workflow **iOS Perso** (compilé sous Linux, bien moins cher en minutes que macOS).
+
+- `vendor.lock` : briques open source figées à un commit (YouTube-X : pubs + arrière-plan, YouPiP, YouQuality, iSponsorBlock, Return-YouTube-Dislikes).
+- `Sources/` : notre code (masquer les Shorts, qualité par défaut Wi-Fi 1080p / mobile 720p).
+- L'app s'appelle **« YouTube Perso »** avec un bundle ID distinct : elle s'installe **à côté** de l'app uYouEnhanced pour comparer.
+- Chaque modification de `tweak-ios/` relance automatiquement un build.
