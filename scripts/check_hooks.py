@@ -81,6 +81,8 @@ class Runtime:
                 return None if cls.startswith(SYSTEM_PREFIXES) else False
             if kind_sel in self.methods[cls]:
                 return True
+            if cls.startswith(SYSTEM_PREFIXES) and cls not in self.supers:
+                return None  # classe d'Apple vue seulement via une catégorie de YouTube
             cls = self.supers.get(cls)
         return False
 
