@@ -1,0 +1,10 @@
+# Portail familial : enregistrement des iPhone (UDID) et installation des apps signées.
+name = "famille-apps"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "famille-apps"
+
+# Secrets (posés par le workflow « Portail ») : FAMILY_CODE, ADMIN_TOKEN, GH_DISPATCH_TOKEN, GH_REPO

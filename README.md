@@ -109,3 +109,51 @@ Workflow **YouTube Music iOS** : [YTMusicUltimate](https://github.com/dayanch96/
 1. **Releases → Draft a new release**, titre **ou** tag : `ytmusic-source`, joindre l'IPA **déchiffrée** de YouTube Music, **Save draft**.
 2. **Actions → YouTube Music iOS → Run workflow** (ou attendre le lundi).
 3. Installer l'IPA produite avec Sideloadly, comme pour YouTube.
+
+---
+
+## Installation iPhone pour la famille (portail + signature Ad Hoc)
+
+Chaque membre de la famille ouvre **un lien** dans Safari : il enregistre son iPhone une fois, puis installe les apps d'un toucher. Pas d'ordinateur, pas de mode développeur. Les apps sont valables **1 an** (durée du profil Ad Hoc) et sont re-signées automatiquement à chaque build.
+
+```
+iPhone ──(profil « Profile Service »)──► Portail Cloudflare ──(déclenche)──► GitHub « Signature iOS »
+   ▲                                          │ R2 : appareils, IPA signées        │ API App Store Connect :
+   └──────── « Installer » (itms-services) ◄──┘                                    │ appareils, certificat, profils Ad Hoc
+```
+
+- `portal/` : Worker Cloudflare (page d'accueil protégée par un code familial, enregistrement de l'UDID, liens d'installation).
+- `scripts/asc.py` : enregistre les iPhone sur le compte Apple, crée le certificat Apple Distribution (gardé dans le brouillon `ios-signing`), les identifiants d'app et les profils Ad Hoc.
+- `scripts/sign_apps.sh` : signe les IPA (zsign) et les dépose sur R2.
+- `signing/apps.json` : apps distribuées et leurs identifiants (`fr.thibz.…`, modifiables **avant** la première signature).
+
+### Mise en place (une seule fois)
+
+**1. Cloudflare**
+1. Tableau de bord → **Workers & Pages** : ouvrir une fois la page pour créer votre sous-domaine `….workers.dev`.
+2. **R2** → activer R2 (Cloudflare demande un moyen de paiement, mais l'offre gratuite couvre largement l'usage : 10 Go).
+3. **Mon profil → Jetons d'API → Créer un jeton** (modèle personnalisé), permissions **Compte** : *Workers Scripts : Modifier*, *Workers R2 Storage : Modifier*.
+4. Noter l'**ID de compte** (colonne de droite de la page d'accueil du compte).
+
+**2. Apple** — [App Store Connect](https://appstoreconnect.apple.com) → **Utilisateurs et accès → Intégrations → Clés d'API d'équipe** → **Générer** avec l'accès **Admin** (nécessaire pour créer le certificat). Noter l'**ID de la clé**, l'**ID de l'émetteur** (Issuer ID) et télécharger le fichier `.p8` (téléchargeable une seule fois).
+
+**3. GitHub** — jeton pour que le portail lance la signature dès qu'un iPhone s'inscrit : **Settings → Developer settings → Fine-grained tokens** → dépôt `yt-famille` uniquement, permission **Actions : Read and write**.
+
+**4. Secrets du dépôt** — `yt-famille` → **Settings → Secrets and variables → Actions → New repository secret** :
+
+| Secret | Valeur |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | jeton Cloudflare (étape 1.3) |
+| `CLOUDFLARE_ACCOUNT_ID` | ID de compte Cloudflare |
+| `FAMILY_CODE` | le code que vous donnerez à la famille |
+| `ASC_KEY_ID` | ID de la clé Apple |
+| `ASC_ISSUER_ID` | Issuer ID Apple |
+| `ASC_PRIVATE_KEY` | contenu complet du fichier `.p8` (lignes `BEGIN`/`END` comprises) |
+| `GH_DISPATCH_TOKEN` | jeton GitHub (étape 3) |
+
+**5. Lancer** : **Actions → Portail → Run workflow**, puis **Actions → Signature iOS → Run workflow**. L'adresse du portail s'affiche dans le résumé du workflow.
+
+### Côté famille
+1. Ouvrir le lien du portail dans **Safari**, entrer le code familial.
+2. **Enregistrer mon iPhone** : autoriser le profil, puis Réglages → **Profil téléchargé** → Installer. La page affiche l'UDID et passe à « Prêt » en quelques minutes.
+3. **Installer** les apps voulues.

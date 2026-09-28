@@ -1,0 +1,8 @@
+{
+  "_doc": "Apps iOS distribuées par le portail familial. bundle = identifiant enregistré sur votre compte Apple (doit être unique chez Apple) ; release = expression régulière du tag de la release GitHub qui contient l'IPA.",
+  "apps": [
+    {"id": "youthibz", "name": "YouThibz", "bundle": "fr.thibz.youthibz", "release": "^build-ios-youthibz-"},
+    {"id": "ytmusic", "name": "YThibz Music", "bundle": "fr.thibz.ythibzmusic", "release": "^build-ytmusic-ios-"},
+    {"id": "uyouenhanced", "name": "YouTube uYou", "bundle": "fr.thibz.youtube", "release": "^build-ios-(?!youthibz-)"}
+  ]
+}

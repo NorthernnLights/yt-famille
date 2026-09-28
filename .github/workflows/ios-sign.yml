@@ -1,0 +1,123 @@
+# Signature Ad Hoc des apps iOS avec le compte développeur Apple, puis publication sur le portail familial.
+# Déclenché après chaque build iOS réussi, quand un iPhone s'inscrit sur le portail, ou à la main.
+name: Signature iOS
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["YouThibz", "iOS", "YouTube Music iOS"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-sign
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Configuration présente ?
+        id: cfg
+        run: |
+          missing=""
+          for v in ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do [ -n "${!v}" ] || missing="$missing $v"; done
+          if [ -n "$missing" ]; then
+            echo "::warning::Signature désactivée, secrets manquants :$missing — voir le README (section « Installation iPhone »)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.cfg.outputs.ok == 'true'
+
+      - name: Portail
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          set -euo pipefail
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r .result.subdomain)
+          echo "PORTAL_URL=https://famille-apps.$sub.workers.dev" >> "$GITHUB_ENV"
+          token=$(printf 'famille-apps-admin:%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -c1-48)
+          echo "::add-mask::$token"
+          echo "PORTAL_ADMIN_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Certificat de distribution (brouillon « ios-signing »)
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cert" "$RUNNER_TEMP/sign"
+          for f in dist.p12 dist.pass; do
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq \
+              "[.[] | select(.tag_name == \"ios-signing\") | .assets[] | select(.name == \"$f\")] | first | .id // empty")
+            [ -z "$id" ] || curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$id" -o "$RUNNER_TEMP/cert/$f"
+          done
+          ls "$RUNNER_TEMP/cert"
+
+      - name: Compte Apple (appareils, certificat, profils)
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" install -q pyjwt cryptography
+          echo "PY=$RUNNER_TEMP/venv/bin/python" >> "$GITHUB_ENV"
+          args=(--apps signing/apps.json --out "$RUNNER_TEMP/sign")
+          if [ -f "$RUNNER_TEMP/cert/dist.p12" ]; then
+            args+=(--p12 "$RUNNER_TEMP/cert/dist.p12" --p12-pass "$(cat "$RUNNER_TEMP/cert/dist.pass")")
+          fi
+          "$RUNNER_TEMP/venv/bin/python" scripts/asc.py sync "${args[@]}"
+          if [ -f "$RUNNER_TEMP/sign/dist.p12" ]; then
+            # Nouveau certificat : on le garde dans un brouillon privé (jamais publié).
+            gh release view ios-signing >/dev/null 2>&1 || gh release create ios-signing --draft \
+              --title "Certificat de signature iOS (NE PAS SUPPRIMER)" \
+              --notes "Certificat Apple Distribution utilisé pour signer les apps iOS de la famille."
+            gh release upload ios-signing "$RUNNER_TEMP/sign/dist.p12" "$RUNNER_TEMP/sign/dist.pass" --clobber
+          else
+            cp "$RUNNER_TEMP/cert/dist.p12" "$RUNNER_TEMP/cert/dist.pass" "$RUNNER_TEMP/sign/"
+          fi
+
+      - name: Cache de zsign
+        if: steps.cfg.outputs.ok == 'true'
+        id: zsign
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/bin/zsign
+          key: zsign-${{ runner.os }}-v1
+
+      - name: Compiler zsign
+        if: steps.cfg.outputs.ok == 'true' && steps.zsign.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq libssl-dev pkg-config zip unzip >/dev/null
+          git clone -q --depth 1 https://github.com/zhlynn/zsign "$RUNNER_TEMP/zsign"
+          make -C "$RUNNER_TEMP/zsign/build/linux" -j"$(nproc)"
+          mkdir -p ~/.local/bin && cp "$RUNNER_TEMP/zsign/bin/zsign" ~/.local/bin/
+
+      - name: Signer et publier sur le portail
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          scripts/sign_apps.sh "$RUNNER_TEMP/sign" | tee "$RUNNER_TEMP/catalog.txt"
+
+      - name: iPhone prêts
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          udids=$(jq -r '.udids | join(",")' "$RUNNER_TEMP/sign/profiles.json")
+          [ -z "$udids" ] || "$PY" scripts/asc.py mark-ready --udids "$udids"
+          {
+            echo "### Portail : $PORTAL_URL"
+            echo
+            echo "Apps signées pour $(jq '.udids | length' "$RUNNER_TEMP/sign/profiles.json") appareil(s)."
+          } >> "$GITHUB_STEP_SUMMARY"

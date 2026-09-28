@@ -1,0 +1,58 @@
+# Déploie le portail familial (Cloudflare Worker + stockage R2).
+name: Portail
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "portal/**"
+      - ".github/workflows/portal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      FAMILY_CODE: ${{ secrets.FAMILY_CODE }}
+      GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+    steps:
+      - name: Configuration présente ?
+        id: cfg
+        run: |
+          missing=""
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID FAMILY_CODE; do [ -n "${!v}" ] || missing="$missing $v"; done
+          if [ -n "$missing" ]; then
+            echo "::warning::Secrets manquants :$missing — voir le README (section « Installation iPhone »)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.cfg.outputs.ok == 'true'
+
+      - name: Déployer
+        if: steps.cfg.outputs.ok == 'true'
+        working-directory: portal
+        run: |
+          set -euo pipefail
+          W="npx --yes wrangler@4"
+          $W r2 bucket create famille-apps 2>&1 | tail -2 || true
+          $W deploy
+          ADMIN_TOKEN=$(printf 'famille-apps-admin:%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -c1-48)
+          printf '%s' "$FAMILY_CODE" | $W secret put FAMILY_CODE
+          printf '%s' "$ADMIN_TOKEN" | $W secret put ADMIN_TOKEN
+          printf '%s' "$GITHUB_REPOSITORY" | $W secret put GH_REPO
+          if [ -n "${GH_DISPATCH_TOKEN:-}" ]; then
+            printf '%s' "$GH_DISPATCH_TOKEN" | $W secret put GH_DISPATCH_TOKEN
+          else
+            echo "::warning::GH_DISPATCH_TOKEN absent : un iPhone inscrit ne sera ajouté qu'au prochain build (ou en lançant « Signature iOS » à la main)."
+          fi
+          sub=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r .result.subdomain)
+          echo "### Portail : https://famille-apps.$sub.workers.dev" >> "$GITHUB_STEP_SUMMARY"

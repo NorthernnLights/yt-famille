@@ -12,3 +12,7 @@ tweak-ios/build/
 .theos/
 packages/
 __pycache__/
+
+# Portail Cloudflare
+portal/.wrangler/
+node_modules/
