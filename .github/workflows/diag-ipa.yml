@@ -1,0 +1,25 @@
+# Diagnostic des IPA publiées (structure, intégrité) — lancé à la main en cas d'échec d'installation.
+name: Diagnostic IPA
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Télécharger les IPA
+        run: |
+          set -euo pipefail
+          mkdir ipas
+          scripts/ios_source.sh download ipas/source.ipa
+          for re in '^build-ios-youthibz-' '^build-ios-(?!youthibz-)'; do
+            tag=$(gh release list --limit 50 --json tagName,isDraft --jq "[.[] | select((.isDraft|not) and (.tagName|test(\"$re\")))] | first | .tagName")
+            [ -n "$tag" ] && gh release download "$tag" -p '*.ipa' -D ipas
+          done
+          ls -l ipas
+      - name: Analyser
+        run: python3 scripts/diag_ipa.py ipas/*.ipa
