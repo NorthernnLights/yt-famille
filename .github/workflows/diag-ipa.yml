@@ -3,7 +3,7 @@ name: Diagnostic IPA
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write  # nécessaire pour voir les brouillons (IPA source)
 jobs:
   diag:
     runs-on: ubuntu-latest
