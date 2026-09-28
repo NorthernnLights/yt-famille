@@ -88,7 +88,7 @@ Seule la **dernière** release de chaque app est gardée (workflows + **Nettoyag
 
 Dossier `tweak-ios/`, workflow **YouThibz** (compilé sous Linux, bien moins cher en minutes que macOS).
 
-- `vendor.lock` : briques open source figées à un commit (YouTube-X : pubs + arrière-plan, YouPiP, YouQuality, iSponsorBlock, Return-YouTube-Dislikes).
+- `vendor.lock` : briques open source figées à un commit (YouTube-X : pubs + arrière-plan, YouPiP, YouQuality, iSponsorBlock, Return-YouTube-Dislikes, IAmYouTube : connexion au compte Google malgré la re-signature).
 - `Sources/` : notre code (masquer les Shorts, qualité par défaut Wi-Fi 1080p / mobile 720p), réglable dans **YouTube > Réglages > YouThibz**.
 - L'app s'appelle **« YouThibz »** avec un bundle ID distinct : elle s'installe **à côté** de l'app uYouEnhanced pour comparer.
 - Chaque modification de `tweak-ios/` relance automatiquement un build.

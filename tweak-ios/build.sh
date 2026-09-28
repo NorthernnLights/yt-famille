@@ -51,6 +51,8 @@ build "$VENDOR/YouQuality"
 build "$VENDOR/Return-YouTube-Dislikes"
 # iSponsorBlock déclare libcolorpicker sans l'utiliser : on retire ce lien (indisponible sous Linux).
 build "$VENDOR/iSponsorBlock" iSponsorBlock_LIBRARIES=
+# Connexion Google : l'app se présente comme le vrai YouTube (sinon « Google ne peut pas confirmer qu'elle est sûre »).
+build "$VENDOR/IAmYouTube"
 
 # 4. Notre propre code
 build "$HERE"
