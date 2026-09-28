@@ -10,6 +10,7 @@ Usage :
 Le script ne fait jamais échouer le build : il produit un rapport. Code de sortie 0.
 """
 import argparse
+import difflib
 import re
 import sys
 from collections import defaultdict
@@ -58,18 +59,34 @@ class Runtime:
     def has_class(self, cls):
         return cls in self.methods
 
+    def similar(self, cls, kind_sel, n=3):
+        """Méthodes existantes les plus proches (classe et ancêtres), pour aider à réparer un hook."""
+        pool, seen = set(), set()
+        while cls and cls not in seen and cls in self.methods:
+            seen.add(cls)
+            pool |= {m for m in self.methods[cls] if m[0] == kind_sel[0]}
+            cls = self.supers.get(cls)
+        first = kind_sel[1:].split(":")[0]
+        same_start = sorted(m for m in pool if m[1:].split(":")[0] == first and m != kind_sel)
+        close = difflib.get_close_matches(kind_sel, sorted(pool), n=n, cutoff=0.6)
+        return list(dict.fromkeys(same_start + close))[:n]
+
     def find(self, cls, kind_sel):
         """True si trouvé, False si absent, None si la chaîne d'héritage sort de YouTube (UIKit…)."""
         seen = set()
         while cls and cls not in seen:
             seen.add(cls)
             if cls not in self.methods:
-                return None  # classe système : on ne peut pas vérifier
+                # Ancêtre hors de YouTube : si c'est une classe d'Apple, la méthode peut venir de là.
+                return None if cls.startswith(SYSTEM_PREFIXES) else False
             if kind_sel in self.methods[cls]:
                 return True
             cls = self.supers.get(cls)
         return False
 
+
+# Classes d'Apple (UIKit, AVKit…) : absentes du binaire de YouTube, donc non vérifiables ici.
+SYSTEM_PREFIXES = ("UI", "_UI", "NS", "AV", "CA", "MP", "SB", "PH", "WK", "CL", "MK", "GC", "SK")
 
 # ---------------------------------------------------------------- hooks Logos
 
@@ -153,7 +170,9 @@ def main():
         for f, ln, cls, sel in hooks:
             where = f"`{Path(f).name}:{ln}`"
             if not rt.has_class(cls):
-                if sel is None:
+                if cls.startswith(SYSTEM_PREFIXES):
+                    unknown += sel is not None
+                elif sel is None:
                     missing += 1
                     lines.append(f"- classe **{cls}** absente ({where})")
                 continue
@@ -166,8 +185,10 @@ def main():
                 unknown += 1
             else:
                 missing += 1
-                lines.append(f"- méthode **{sel[0]}[{cls} {sel[1:]}]** absente ({where})")
-        missing_refs = sorted({c for _, _, c in refs if not rt.has_class(c) and not c.startswith(("UI", "NS", "AV", "CA", "MP"))})
+                hint = rt.similar(cls, sel)
+                hint = " — proches : " + ", ".join(f"`{h[1:]}`" for h in hint) if hint else ""
+                lines.append(f"- méthode **{sel[0]}[{cls} {sel[1:]}]** absente ({where}){hint}")
+        missing_refs = sorted({c for _, _, c in refs if not rt.has_class(c) and not c.startswith(SYSTEM_PREFIXES)})
         total_missing += missing
         out.append(f"| {name} | {ok + missing + unknown} | {ok} | {missing} | {unknown} |")
         if lines or missing_refs:
@@ -178,7 +199,7 @@ def main():
                                + ", ".join(f"`{c}`" for c in missing_refs))
             details.append("")
 
-    out += ["", "\\* méthode héritée d'une classe système (UIKit…), non vérifiable dans le binaire de YouTube.",
+    out += ["", "\\* classe système (UIKit, AVKit…) ou méthode héritée d'une classe système : non vérifiable dans le binaire de YouTube.",
             "", "Certaines briques visent volontairement plusieurs variantes d'une même méthode selon la version de YouTube : "
             "une absence isolée n'est pas forcément une panne. Ce qui compte, c'est ce qui **change** d'une version à l'autre.", ""]
     out.append("✅ Aucun hook cassé détecté." if total_missing == 0

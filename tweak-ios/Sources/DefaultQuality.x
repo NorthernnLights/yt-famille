@@ -50,8 +50,10 @@ static void YTBApplyDefaultQuality(YTPlayerViewController *player) {
     [video setVideoFormatConstraint:constraint];
 }
 
+// Appelé quand une nouvelle vidéo devient active dans le lecteur (présent dans YouTube 21.38,
+// également utilisé par iSponsorBlock). Voir le rapport « Compatibilité des hooks » à chaque version.
 %hook YTPlayerViewController
-- (void)loadWithPlayerTransition:(id)transition playbackConfig:(id)config {
+- (void)playbackController:(id)controller didActivateVideo:(id)video withPlaybackData:(id)data {
     %orig;
     __weak YTPlayerViewController *weakSelf = self;
     // Laisser le temps au lecteur de connaître les formats disponibles.
