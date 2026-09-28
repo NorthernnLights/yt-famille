@@ -51,6 +51,8 @@ Modifier `config.toml` (patchs exclus, options, `patches-version = "dev"` pour d
 
 Ensuite : **Actions → iOS → Run workflow** (ou attendre le lundi suivant).
 
+**Vérification automatique :** avant chaque build, `scripts/verify_ipa.py` refuse une IPA encore **chiffrée** ou **déjà modifiée** (uYou, YTLite, CydiaSubstrate…). Pour seulement tester une IPA sans rien construire : **Run workflow** avec `verify_only` coché (quelques minutes Linux, pas de minutes macOS).
+
 > ⚠️ uYouEnhanced est testé avec une version précise de YouTube (indiquée dans les notes de chaque release). Une IPA beaucoup plus récente peut marcher, avec parfois des fonctions cassées.
 
 ### 2. Installer avec le compte développeur Apple (99 $/an)

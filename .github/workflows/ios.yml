@@ -30,6 +30,10 @@ on:
         description: "Reconstruire même si rien n'a changé"
         type: boolean
         default: false
+      verify_only:
+        description: "Seulement vérifier l'IPA (déchiffrée ? déjà modifiée ?), sans construire"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -64,6 +68,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IPA_URL: ${{ inputs.ipa_url }}
           FORCE: ${{ inputs.force || false }}
+          VERIFY_ONLY: ${{ inputs.verify_only || false }}
         run: |
           set -euo pipefail
           if [ -n "${IPA_URL:-}" ]; then
@@ -84,16 +89,34 @@ jobs:
           tag="build-ios-${src_id}-${uyou_sha:0:7}-${opts}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "uyou_sha=$uyou_sha" >> "$GITHUB_OUTPUT"
-          if [ "$FORCE" = "true" ] || ! gh release view "$tag" >/dev/null 2>&1; then
+          if [ "$FORCE" = "true" ] || [ "$VERIFY_ONLY" = "true" ] || ! gh release view "$tag" >/dev/null 2>&1; then
             echo "should_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "Déjà construit ($tag), rien à faire."
             echo "should_build=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Sur Linux (bon marché) : refuser tout de suite une IPA chiffrée ou déjà modifiée.
+      - name: Vérifier l'IPA
+        if: steps.check.outputs.should_build == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IPA_URL: ${{ inputs.ipa_url }}
+        run: |
+          set -euo pipefail
+          if [ -n "${IPA_URL:-}" ]; then
+            echo "::add-mask::$IPA_URL"
+            curl -fsSL "$IPA_URL" -o /tmp/YouTube.ipa
+          else
+            ipa=$(gh release view ios-source --json assets \
+              -q '[.assets[] | select(.name | endswith(".ipa"))] | sort_by(.updatedAt) | last | .name')
+            gh release download ios-source -p "$ipa" -O /tmp/YouTube.ipa
+          fi
+          python3 scripts/verify_ipa.py /tmp/YouTube.ipa
+
   build:
     needs: check
-    if: needs.check.outputs.should_build == 'true'
+    if: needs.check.outputs.should_build == 'true' && !inputs.verify_only
     runs-on: macos-latest
     steps:
       - name: Récupérer uYouEnhanced
