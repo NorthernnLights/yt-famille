@@ -11,3 +11,4 @@ builder/
 tweak-ios/build/
 .theos/
 packages/
+__pycache__/
