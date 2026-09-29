@@ -4,5 +4,10 @@
 <dict>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>YouThibz enregistre dans Photos les vidéos que vous téléchargez.</string>
+	<!-- Dossier Documents visible dans Fichiers > Sur mon iPhone > YouThibz (audio téléchargé) -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>
