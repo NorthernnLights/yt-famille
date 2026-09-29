@@ -20,7 +20,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh release list --limit 200 --json tagName,createdAt,isDraft --jq '
+          gh release list --limit 200 --json tagName,publishedAt,isDraft --jq '
             def family:
               if   (.tagName | startswith("build-android-"))      then "android"
               elif (.tagName | startswith("build-ios-youthibz-")) then "youthibz"
@@ -30,7 +30,7 @@ jobs:
               else "autre" end;
             [ .[] | select(.isDraft | not) | . + {family: family} | select(.family != "autre") ]
             | group_by(.family)
-            | map(if .[0].family == "obsolete" then .[] else (sort_by(.createdAt) | reverse | .[1:][]) end)
+            | map(if .[0].family == "obsolete" then .[] else (sort_by(.publishedAt) | reverse | .[1:][]) end)
             | .[].tagName' > to_delete.txt
           if [ ! -s to_delete.txt ]; then echo "Rien à supprimer."; exit 0; fi
           echo "Releases supprimées :"

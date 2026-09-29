@@ -145,6 +145,6 @@ jobs:
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" "../$OUT" --title "YouTube Music iOS — ${VERSION} + YTMusicUltimate ${SHA:0:7}" \
             --notes-file notes.md --latest=false
-          gh release list --limit 100 --json tagName,createdAt \
-            -q '[.[] | select(.tagName | startswith("build-ytmusic-ios-"))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
+          gh release list --limit 100 --json tagName,publishedAt \
+            -q '[.[] | select(.tagName | startswith("build-ytmusic-ios-"))] | map(select(.tagName != env.TAG)) | sort_by(.publishedAt) | reverse | .[((env.KEEP_RELEASES|tonumber) - 1):] | .[].tagName' \
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag

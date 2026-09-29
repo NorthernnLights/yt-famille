@@ -12,13 +12,13 @@ W="npx --yes wrangler@4"
 rm -rf "$WORK" && mkdir -p "$WORK"
 PASS=$(cat "$SIGN/dist.pass")
 
-releases=$(gh release list --limit 100 --json tagName,createdAt,isDraft)
+releases=$(gh release list --limit 100 --json tagName,publishedAt,isDraft)
 catalog="[]"
 
 while IFS=$'\t' read -r id name bundle regex; do
   prov="$SIGN/$id.mobileprovision"
   [ -f "$prov" ] || { echo "::warning::$name : pas de profil, ignoré."; continue; }
-  tag=$(jq -r --arg re "$regex" '[.[] | select((.isDraft | not) and (.tagName | test($re)))] | sort_by(.createdAt) | last | .tagName // empty' <<<"$releases")
+  tag=$(jq -r --arg re "$regex" '[.[] | select((.isDraft | not) and (.tagName | test($re)))] | sort_by(.publishedAt) | last | .tagName // empty' <<<"$releases")
   [ -n "$tag" ] || { echo "$name : aucune release trouvée ($regex), ignoré."; continue; }
   echo "==> $name ($tag)"
   rm -rf "$WORK/$id" && mkdir -p "$WORK/$id"

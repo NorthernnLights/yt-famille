@@ -171,6 +171,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: repo
         run: |
-          gh release list --limit 100 --json tagName,createdAt \
-            -q '[.[] | select(.tagName | startswith("build-android-"))] | sort_by(.createdAt) | reverse | .[(env.KEEP_RELEASES|tonumber):] | .[].tagName' \
+          gh release list --limit 100 --json tagName,publishedAt \
+            -q '[.[] | select(.tagName | startswith("build-android-"))] | map(select(.tagName != env.TAG)) | sort_by(.publishedAt) | reverse | .[((env.KEEP_RELEASES|tonumber) - 1):] | .[].tagName' \
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
