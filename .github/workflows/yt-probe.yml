@@ -1,0 +1,16 @@
+# Sonde manuelle : quels clients YouTube fournissent des liens téléchargeables (pour le bouton Télécharger).
+name: Sonde téléchargement YouTube
+on:
+  workflow_dispatch:
+    inputs:
+      videos:
+        description: "Identifiants de vidéos (séparés par des espaces)"
+        default: "dQw4w9WgXcQ jNQXAC9IVRw"
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 scripts/yt_probe.py ${{ inputs.videos }}
