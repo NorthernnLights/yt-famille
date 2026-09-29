@@ -56,6 +56,40 @@ def status(url, ua):
         return f"erreur {e}"
 
 
+def fetch_text(url, ua):
+    req = urllib.request.Request(url, headers={"User-Agent": ua})
+    with OPENER.open(req, timeout=30) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def show_hls(url, ua):
+    """Affiche la structure du flux HLS (format des segments : TS ou MP4 fragmenté)."""
+    try:
+        master = fetch_text(url, ua)
+    except Exception as e:  # noqa
+        print(f"   HLS maître : erreur {e}")
+        return
+    lines = master.splitlines()
+    print(f"   HLS maître : {len(lines)} lignes")
+    for l in lines[:40]:
+        print("     " + (l[:160] + "…" if len(l) > 160 else l))
+    variants = [l for l in lines if l and not l.startswith("#")]
+    if variants:
+        try:
+            media = fetch_text(variants[-1], ua).splitlines()
+            print(f"   HLS variante (dernière) : {len(media)} lignes")
+            for l in media[:14]:
+                print("     " + (l[:160] + "…" if len(l) > 160 else l))
+            seg = next((l for l in media if l and not l.startswith("#")), None)
+            if seg:
+                req = urllib.request.Request(seg, headers={"User-Agent": ua, "Range": "bytes=0-15"})
+                with OPENER.open(req, timeout=30) as r:
+                    head = r.read(16)
+                print(f"   1er segment : HTTP {r.status}, premiers octets {head.hex()} ({'TS' if head[:1] == b'G' else 'MP4 ?'})")
+        except Exception as e:  # noqa
+            print(f"   HLS variante : erreur {e}")
+
+
 def probe(video_id, with_visitor):
     JAR.clear()
     vd = visitor_data(video_id) if with_visitor else None
@@ -84,6 +118,8 @@ def probe(video_id, with_visitor):
                       key=lambda f: f.get("height", 0))
         auds = sorted((f for f in direct if f.get("mimeType", "").startswith("audio/mp4")), key=lambda f: f.get("bitrate", 0))
         muxed = [f for f in direct if "mp4a" in f.get("mimeType", "") and f.get("mimeType", "").startswith("video/")]
+        if sd.get("hlsManifestUrl") and "--hls" in sys.argv:
+            show_hls(sd["hlsManifestUrl"], ua)
         for label, f in (("vidéo H.264 max", vids[-1] if vids else None), ("audio AAC max", auds[-1] if auds else None),
                          ("tout-en-un", muxed[-1] if muxed else None)):
             if f:
@@ -91,6 +127,7 @@ def probe(video_id, with_visitor):
 
 
 if __name__ == "__main__":
-    for vid in sys.argv[1:] or ["dQw4w9WgXcQ", "jNQXAC9IVRw"]:
+    for vid in [a for a in sys.argv[1:] if not a.startswith("--")] or ["dQw4w9WgXcQ", "jNQXAC9IVRw"]:
         probe(vid, with_visitor=False)
-        probe(vid, with_visitor=True)
+        if "--hls" not in sys.argv:
+            probe(vid, with_visitor=True)
