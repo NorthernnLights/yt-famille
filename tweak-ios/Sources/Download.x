@@ -735,7 +735,7 @@ static void YTBDeliver(YTBJob *job, NSString *videoPath, NSString *audioPath, NS
             YTBFinishJob(job, saveError, [NSString stringWithFormat:@"🎬 « %@ »%@ enregistrée dans Photos", job.title,
                 height > 0 ? [NSString stringWithFormat:@" (%ldp)", (long)height] : @""]);
         });
-    }];
+    });
 }
 
 // Téléchargement à partir de liens directs (réponse de l'app ou InnerTube).
