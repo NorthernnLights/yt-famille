@@ -2,10 +2,16 @@
 """Teste quels clients InnerTube renvoient des liens de téléchargement directs (sans jeton PO).
 Usage : yt_probe.py [ID_VIDEO ...]   — sert à ajuster le téléchargement de YouThibz.
 Définitions des clients reprises de yt-dlp (yt_dlp/extractor/youtube/_base.py)."""
+import http.cookiejar
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
+
+JAR = http.cookiejar.CookieJar()
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(JAR))
+WEB_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15"
 
 CLIENTS = {
     "visionos": (101, {"clientName": "VISIONOS", "clientVersion": "1.02", "deviceMake": "Apple",
@@ -24,15 +30,25 @@ CLIENTS = {
 
 def post(url, body, headers):
     req = urllib.request.Request(url, json.dumps(body).encode(), headers)
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with OPENER.open(req, timeout=30) as r:
         return json.load(r)
+
+
+def visitor_data(video_id):
+    """Comme yt-dlp : la page de la vidéo fournit VISITOR_DATA (et des cookies de visiteur)."""
+    req = urllib.request.Request(f"https://www.youtube.com/watch?v={video_id}&bpctr=9999999999&has_verified=1",
+                                 headers={"User-Agent": WEB_UA, "Accept-Language": "fr-FR,fr;q=0.9"})
+    with OPENER.open(req, timeout=30) as r:
+        html = r.read().decode("utf-8", "replace")
+    m = re.search(r'"VISITOR_DATA"\s*:\s*"([^"]+)"', html)
+    return m.group(1) if m else None
 
 
 def status(url, ua):
     sep = "&" if "?" in url else "?"
     req = urllib.request.Request(f"{url}{sep}range=0-65535", headers={"User-Agent": ua})
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with OPENER.open(req, timeout=30) as r:
             return f"{r.status} ({len(r.read())} o)"
     except urllib.error.HTTPError as e:
         return f"HTTP {e.code}"
@@ -40,14 +56,19 @@ def status(url, ua):
         return f"erreur {e}"
 
 
-def probe(video_id):
-    print(f"\n######## {video_id}")
+def probe(video_id, with_visitor):
+    JAR.clear()
+    vd = visitor_data(video_id) if with_visitor else None
+    print(f"\n######## {video_id} — visitorData : {'oui' if vd else 'non'}")
     for name, (cid, client, ua) in CLIENTS.items():
-        body = {"context": {"client": {**client, "hl": "fr", "gl": "FR"}}, "videoId": video_id,
+        extra = {"visitorData": vd} if vd else {}
+        body = {"context": {"client": {**client, **extra, "hl": "fr", "gl": "FR"}}, "videoId": video_id,
                 "contentCheckOk": True, "racyCheckOk": True,
                 "playbackContext": {"contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS"}}}
         headers = {"Content-Type": "application/json", "User-Agent": ua, "Origin": "https://www.youtube.com",
                    "X-YouTube-Client-Name": str(cid), "X-YouTube-Client-Version": client["clientVersion"]}
+        if vd:
+            headers["X-Goog-Visitor-Id"] = vd
         try:
             d = post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", body, headers)
         except Exception as e:  # noqa
@@ -71,4 +92,5 @@ def probe(video_id):
 
 if __name__ == "__main__":
     for vid in sys.argv[1:] or ["dQw4w9WgXcQ", "jNQXAC9IVRw"]:
-        probe(vid)
+        probe(vid, with_visitor=False)
+        probe(vid, with_visitor=True)
