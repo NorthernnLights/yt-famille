@@ -2,8 +2,8 @@
 //  - « Vidéo » : meilleure vidéo H.264 sous le plafond de qualité + meilleur audio AAC, assemblés en .mp4
 //    puis enregistrés dans Photos.
 //  - « Audio seul » : piste AAC (.m4a), proposée via la feuille de partage (« Enregistrer dans Fichiers »).
-// Les liens viennent des données de lecture que l'app a déjà reçues : si YouTube n'en fournit pas
-// (diffusion « SABR »), un message l'indique avec le détail des formats, pour faire évoluer le code.
+// L'app lit en « SABR » (pas de lien direct) : les liens sont redemandés à l'API InnerTube avec un client
+// qui en reçoit (voir YTBInnerTubeClients). En cas d'échec, un message détaille la réponse de chaque client.
 #import "Prefs.h"
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -82,7 +82,7 @@ static NSString *YTBSafeFileName(NSString *name) {
 // --- Formats disponibles -----------------------------------------------------------------------
 
 @interface YTBFormat : NSObject
-@property (nonatomic, copy) NSString *url, *mime;
+@property (nonatomic, copy) NSString *url, *mime, *userAgent; // userAgent : celui du client qui a fourni le lien
 @property (nonatomic) NSInteger itag, height, bitrate;
 @property (nonatomic) long long length;
 @property (nonatomic) double fps;
@@ -140,6 +140,105 @@ static NSArray <YTBFormat *> *YTBFormats(YTSingleVideoController *active, NSStri
             [sabr isKindOfClass:NSString.class] && [(NSString *)sabr length] ? @"oui" : @"non ou inconnu"];
     }
     return formats;
+}
+
+// --- Liens directs via l'API InnerTube -----------------------------------------------------------
+// L'app lit en « SABR » (flux sans lien téléchargeable). On redemande donc la vidéo à YouTube en se
+// présentant comme un autre client, qui reçoit des liens directs sans jeton. Clients et paramètres
+// repris de yt-dlp (yt_dlp/extractor/youtube/_base.py, client par défaut sans JavaScript : visionos).
+// Vérifiable avec le workflow « Sonde téléchargement YouTube » (scripts/yt_probe.py).
+
+static NSArray <NSDictionary *> *YTBInnerTubeClients(void) {
+    return @[
+        @{@"name": @"visionos", @"id": @101, @"ua": @"Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+          @"client": @{@"clientName": @"VISIONOS", @"clientVersion": @"1.02", @"deviceMake": @"Apple", @"deviceModel": @"RealityDevice17,1",
+                       @"osName": @"visionOS", @"osVersion": @"26.5.23O471"}},
+        @{@"name": @"android_vr", @"id": @28, @"ua": @"com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+          @"client": @{@"clientName": @"ANDROID_VR", @"clientVersion": @"1.65.10", @"deviceMake": @"Oculus", @"deviceModel": @"Quest 3",
+                       @"androidSdkVersion": @32, @"osName": @"Android", @"osVersion": @"12L"}},
+    ];
+}
+
+static NSURLSession *YTBSession(void) {
+    static NSURLSession *session;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSURLSessionConfiguration *config = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        config.timeoutIntervalForRequest = 60;
+        session = [NSURLSession sessionWithConfiguration:config];
+    });
+    return session;
+}
+
+static NSArray <YTBFormat *> *YTBParseStreamingData(NSDictionary *streaming, NSString *userAgent) {
+    NSMutableArray <YTBFormat *> *formats = [NSMutableArray array];
+    NSMutableArray *list = [NSMutableArray array];
+    for (NSString *key in @[@"formats", @"adaptiveFormats"])
+        if ([streaming[key] isKindOfClass:NSArray.class]) [list addObjectsFromArray:streaming[key]];
+    for (NSDictionary *d in list) {
+        if (![d isKindOfClass:NSDictionary.class] || ![d[@"url"] isKindOfClass:NSString.class]) continue;
+        YTBFormat *f = [YTBFormat new];
+        f.url = d[@"url"];
+        f.mime = [d[@"mimeType"] isKindOfClass:NSString.class] ? d[@"mimeType"] : @"";
+        f.itag = [d[@"itag"] integerValue];
+        f.height = [d[@"height"] integerValue];
+        f.bitrate = [d[@"bitrate"] integerValue];
+        f.length = [d[@"contentLength"] longLongValue];
+        f.fps = [d[@"fps"] doubleValue];
+        NSDictionary *track = [d[@"audioTrack"] isKindOfClass:NSDictionary.class] ? d[@"audioTrack"] : nil;
+        f.defaultAudio = !track || [track[@"audioIsDefault"] boolValue];
+        f.userAgent = userAgent;
+        [formats addObject:f];
+    }
+    return formats;
+}
+
+// Essaie chaque client jusqu'à obtenir des liens. done(formats, titre, diagnostic) sur la file principale.
+static void YTBFetchInnerTube(NSString *videoId, NSUInteger index, NSMutableArray <NSString *> *notes,
+                              void (^done)(NSArray <YTBFormat *> *, NSString *, NSString *)) {
+    NSArray <NSDictionary *> *clients = YTBInnerTubeClients();
+    if (index >= clients.count) {
+        dispatch_async(dispatch_get_main_queue(), ^{ done(@[], nil, [notes componentsJoinedByString:@"\n"]); });
+        return;
+    }
+    NSDictionary *c = clients[index];
+    NSMutableDictionary *client = [c[@"client"] mutableCopy];
+    NSString *lang = [[NSLocale preferredLanguages] firstObject] ?: @"fr";
+    client[@"hl"] = [[lang componentsSeparatedByString:@"-"] firstObject];
+    NSString *region = [[NSLocale currentLocale] objectForKey:NSLocaleCountryCode];
+    if (region) client[@"gl"] = region;
+    NSDictionary *body = @{
+        @"context": @{@"client": client},
+        @"videoId": videoId,
+        @"contentCheckOk": @YES,
+        @"racyCheckOk": @YES,
+        @"playbackContext": @{@"contentPlaybackContext": @{@"html5Preference": @"HTML5_PREF_WANTS"}},
+    };
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://www.youtube.com/youtubei/v1/player?prettyPrint=false"]];
+    request.HTTPMethod = @"POST";
+    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:c[@"ua"] forHTTPHeaderField:@"User-Agent"];
+    [request setValue:@"https://www.youtube.com" forHTTPHeaderField:@"Origin"];
+    [request setValue:[c[@"id"] stringValue] forHTTPHeaderField:@"X-YouTube-Client-Name"];
+    [request setValue:client[@"clientVersion"] forHTTPHeaderField:@"X-YouTube-Client-Version"];
+    [[YTBSession() dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        NSDictionary *json = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        if (![json isKindOfClass:NSDictionary.class]) json = nil;
+        NSDictionary *playability = [json[@"playabilityStatus"] isKindOfClass:NSDictionary.class] ? json[@"playabilityStatus"] : nil;
+        NSArray <YTBFormat *> *formats = YTBParseStreamingData([json[@"streamingData"] isKindOfClass:NSDictionary.class] ? json[@"streamingData"] : nil, c[@"ua"]);
+        if (formats.count) {
+            NSDictionary *details = [json[@"videoDetails"] isKindOfClass:NSDictionary.class] ? json[@"videoDetails"] : nil;
+            NSString *title = [details[@"title"] isKindOfClass:NSString.class] ? details[@"title"] : nil;
+            dispatch_async(dispatch_get_main_queue(), ^{ done(formats, title, c[@"name"]); });
+            return;
+        }
+        NSString *why = error.localizedDescription
+            ?: [NSString stringWithFormat:@"%@ %@", playability[@"status"] ?: [NSString stringWithFormat:@"HTTP %ld", (long)[(NSHTTPURLResponse *)response statusCode]],
+                playability[@"reason"] ?: @""];
+        [notes addObject:[NSString stringWithFormat:@"%@ : %@", c[@"name"], why]];
+        YTBFetchInnerTube(videoId, index + 1, notes, done);
+    }] resume];
 }
 
 static YTBFormat *YTBBestVideo(NSArray <YTBFormat *> *formats, NSInteger cap) {
@@ -204,10 +303,10 @@ static const long long kChunk = 10 * 1024 * 1024;
     NSString *sep = [format.url containsString:@"?"] ? @"&" : @"?";
     NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@%@range=%lld-%lld", format.url, sep, start, end]];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    [request setValue:[self userAgent] forHTTPHeaderField:@"User-Agent"];
+    [request setValue:format.userAgent ?: [self userAgent] forHTTPHeaderField:@"User-Agent"];
     request.timeoutInterval = 60;
     __weak typeof(self) weakSelf = self;
-    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    [[YTBSession() dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger status = [(NSHTTPURLResponse *)response statusCode];
         if (!error && status == 416 && start > 0) { done(nil); return; } // taille inconnue : fin du fichier atteinte
         if (error || status >= 400) {
@@ -281,92 +380,104 @@ static void YTBShareFile(NSString *path, UIView *sourceView) {
 
 static void YTBRun(YTPlayerViewController *player, BOOL audioOnly, UIView *sourceView) {
     YTSingleVideoController *active = [player activeVideo];
-    NSString *diagnostic = nil;
-    NSArray <YTBFormat *> *formats = YTBFormats(active, &diagnostic);
-    NSInteger cap = YTBInt(kQualityWiFi, 1080);
-    if (cap <= 0) cap = 1080;
-
-    YTBFormat *audio = YTBBestAudio(formats);
-    YTBFormat *video = audioOnly ? nil : YTBBestVideo(formats, cap);
-    YTBFormat *muxed = nil;
-    if (!audioOnly && (!video || !audio)) muxed = YTBBestMuxed(formats); // repli : format tout-en-un (souvent 360p)
-    if ((audioOnly && !audio) || (!audioOnly && !muxed && (!video || !audio))) {
-        YTBAlert(@"Téléchargement impossible",
-                 [NSString stringWithFormat:@"YouTube n'a pas fourni de lien téléchargeable pour cette vidéo.\n\n%@", diagnostic]);
-        return;
-    }
-
-    NSString *videoId = [player currentVideoID] ?: @"video";
+    NSString *videoId = [player currentVideoID];
+    if (!videoId.length) { YTBAlert(@"Téléchargement", @"Vidéo introuvable."); return; }
+    NSString *localDiagnostic = nil;
+    NSArray <YTBFormat *> *localFormats = YTBFormats(active, &localDiagnostic);
     id details = YTBValue(YTBValue([active singleVideo], @"video"), @"videoDetails");
-    NSString *title = YTBSafeFileName(YTBValue(details, @"title") ?: videoId);
-    NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:[@"YouThibz/" stringByAppendingString:videoId]];
-    [[NSFileManager defaultManager] removeItemAtPath:dir error:nil];
-    [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString *localTitle = YTBValue(details, @"title");
 
     YTBDownloader *downloader = [YTBDownloader new];
-    UIAlertController *progress = [UIAlertController alertControllerWithTitle:@"Téléchargement" message:@"Préparation…" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *progress = [UIAlertController alertControllerWithTitle:@"Téléchargement" message:@"Recherche des liens…" preferredStyle:UIAlertControllerStyleAlert];
     [progress addAction:[UIAlertAction actionWithTitle:@"Annuler" style:UIAlertActionStyleCancel handler:^(UIAlertAction *a) { downloader.cancelled = YES; }]];
     [YTBTopController() presentViewController:progress animated:YES completion:nil];
 
     __block UIBackgroundTaskIdentifier task = [UIApplication.sharedApplication beginBackgroundTaskWithExpirationHandler:^{
         downloader.cancelled = YES;
     }];
-    void (^finish)(NSError *, NSString *, NSString *) = ^(NSError *error, NSString *okTitle, NSString *okMessage) {
+    void (^finishWith)(NSError *, NSString *, NSString *, NSString *) = ^(NSError *error, NSString *errorTitle, NSString *okTitle, NSString *okMessage) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [progress dismissViewControllerAnimated:YES completion:^{
-                if (error && error.code != -999) YTBAlert(@"Échec du téléchargement", error.localizedDescription);
+                if (error && error.code != -999) YTBAlert(errorTitle ?: @"Échec du téléchargement", error.localizedDescription);
                 else if (!error && okTitle) YTBAlert(okTitle, okMessage);
             }];
             [UIApplication.sharedApplication endBackgroundTask:task];
             task = UIBackgroundTaskInvalid;
         });
     };
+    void (^finish)(NSError *, NSString *, NSString *) = ^(NSError *error, NSString *okTitle, NSString *okMessage) {
+        finishWith(error, nil, okTitle, okMessage);
+    };
     void (^status)(NSString *) = ^(NSString *text) {
         dispatch_async(dispatch_get_main_queue(), ^{ progress.message = text; });
     };
 
-    if (audioOnly) {
-        NSString *path = [dir stringByAppendingPathComponent:[title stringByAppendingPathExtension:@"m4a"]];
-        downloader.progress = ^(double f) { status([NSString stringWithFormat:@"Audio : %d %%", (int)(f * 100)]); };
-        [downloader fetch:audio to:path done:^(NSError *error) {
-            if (error) { finish(error, nil, nil); return; }
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [progress dismissViewControllerAnimated:YES completion:^{ YTBShareFile(path, sourceView); }];
-                [UIApplication.sharedApplication endBackgroundTask:task];
-            });
-        }];
-        return;
-    }
+    YTBFetchInnerTube(videoId, 0, [NSMutableArray array], ^(NSArray <YTBFormat *> *remoteFormats, NSString *remoteTitle, NSString *remoteNote) {
+        if (downloader.cancelled) { finish([NSError errorWithDomain:@"YouThibz" code:-999 userInfo:nil], nil, nil); return; }
+        NSArray <YTBFormat *> *formats = remoteFormats.count ? remoteFormats : localFormats;
+        NSInteger cap = YTBInt(kQualityWiFi, 1080);
+        if (cap <= 0) cap = 1080;
 
-    NSString *output = [dir stringByAppendingPathComponent:[title stringByAppendingPathExtension:@"mp4"]];
-    NSString *label = [NSString stringWithFormat:@"%ldp", (long)(muxed ?: video).height];
-    void (^save)(void) = ^{
-        status(@"Enregistrement dans Photos…");
-        YTBSaveVideoToPhotos(output, ^(NSError *error) {
-            [[NSFileManager defaultManager] removeItemAtPath:dir error:nil];
-            finish(error, @"Vidéo enregistrée", [NSString stringWithFormat:@"« %@ » (%@) est dans l'app Photos.", title, label]);
-        });
-    };
-    if (muxed) {
-        downloader.progress = ^(double f) { status([NSString stringWithFormat:@"Vidéo %@ : %d %%", label, (int)(f * 100)]); };
-        [downloader fetch:muxed to:output done:^(NSError *error) { if (error) finish(error, nil, nil); else save(); }];
-        return;
-    }
-    NSString *videoPath = [dir stringByAppendingPathComponent:@"video.mp4"];
-    NSString *audioPath = [dir stringByAppendingPathComponent:@"audio.m4a"];
-    downloader.progress = ^(double f) { status([NSString stringWithFormat:@"Vidéo %@ : %d %%", label, (int)(f * 100)]); };
-    [downloader fetch:video to:videoPath done:^(NSError *error) {
-        if (error) { finish(error, nil, nil); return; }
-        downloader.progress = ^(double f) { status([NSString stringWithFormat:@"Audio : %d %%", (int)(f * 100)]); };
-        [downloader fetch:audio to:audioPath done:^(NSError *error) {
-            if (error) { finish(error, nil, nil); return; }
-            status(@"Assemblage…");
-            YTBMerge(videoPath, audioPath, output, ^(NSError *error) {
-                if (error) finish(error, nil, nil);
-                else save();
+        YTBFormat *audio = YTBBestAudio(formats);
+        YTBFormat *video = audioOnly ? nil : YTBBestVideo(formats, cap);
+        YTBFormat *muxed = nil;
+        if (!audioOnly && (!video || !audio)) muxed = YTBBestMuxed(formats); // repli : format tout-en-un (souvent 360p)
+        if ((audioOnly && !audio) || (!audioOnly && !muxed && (!video || !audio))) {
+            NSString *message = [NSString stringWithFormat:@"YouTube n'a pas fourni de lien téléchargeable pour cette vidéo.\n\n%@\n%@",
+                remoteFormats.count ? [NSString stringWithFormat:@"%@ : %lu formats, aucun utilisable.", remoteNote, (unsigned long)remoteFormats.count] : remoteNote,
+                localDiagnostic];
+            finishWith([NSError errorWithDomain:@"YouThibz" code:5 userInfo:@{NSLocalizedDescriptionKey: message}], @"Téléchargement impossible", nil, nil);
+            return;
+        }
+
+        NSString *title = YTBSafeFileName(remoteTitle ?: localTitle ?: videoId);
+        NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:[@"YouThibz/" stringByAppendingString:videoId]];
+        [[NSFileManager defaultManager] removeItemAtPath:dir error:nil];
+        [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+
+        if (audioOnly) {
+            NSString *path = [dir stringByAppendingPathComponent:[title stringByAppendingPathExtension:@"m4a"]];
+            downloader.progress = ^(double f) { status([NSString stringWithFormat:@"Audio : %d %%", (int)(f * 100)]); };
+            [downloader fetch:audio to:path done:^(NSError *error) {
+                if (error) { finish(error, nil, nil); return; }
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [progress dismissViewControllerAnimated:YES completion:^{ YTBShareFile(path, sourceView); }];
+                    [UIApplication.sharedApplication endBackgroundTask:task];
+                });
+            }];
+            return;
+        }
+
+        NSString *output = [dir stringByAppendingPathComponent:[title stringByAppendingPathExtension:@"mp4"]];
+        NSString *label = [NSString stringWithFormat:@"%ldp", (long)(muxed ?: video).height];
+        void (^save)(void) = ^{
+            status(@"Enregistrement dans Photos…");
+            YTBSaveVideoToPhotos(output, ^(NSError *error) {
+                [[NSFileManager defaultManager] removeItemAtPath:dir error:nil];
+                finish(error, @"Vidéo enregistrée", [NSString stringWithFormat:@"« %@ » (%@) est dans l'app Photos.", title, label]);
             });
+        };
+        if (muxed) {
+            downloader.progress = ^(double f) { status([NSString stringWithFormat:@"Vidéo %@ : %d %%", label, (int)(f * 100)]); };
+            [downloader fetch:muxed to:output done:^(NSError *error) { if (error) finish(error, nil, nil); else save(); }];
+            return;
+        }
+        NSString *videoPath = [dir stringByAppendingPathComponent:@"video.mp4"];
+        NSString *audioPath = [dir stringByAppendingPathComponent:@"audio.m4a"];
+        downloader.progress = ^(double f) { status([NSString stringWithFormat:@"Vidéo %@ : %d %%", label, (int)(f * 100)]); };
+        [downloader fetch:video to:videoPath done:^(NSError *error) {
+            if (error) { finish(error, nil, nil); return; }
+            downloader.progress = ^(double f) { status([NSString stringWithFormat:@"Audio : %d %%", (int)(f * 100)]); };
+            [downloader fetch:audio to:audioPath done:^(NSError *error) {
+                if (error) { finish(error, nil, nil); return; }
+                status(@"Assemblage…");
+                YTBMerge(videoPath, audioPath, output, ^(NSError *error) {
+                    if (error) finish(error, nil, nil);
+                    else save();
+                });
+            }];
         }];
-    }];
+    });
 }
 
 static void YTBPresentMenu(UIResponder *from, UIView *sourceView) {
